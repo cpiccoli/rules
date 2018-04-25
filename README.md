@@ -4,4 +4,4 @@ Rule nr. 1:
 Rule file Scale-StoneTypeShp.cga for GIS-driven symbology (see Piccoli 2018, 228-32) associated with zipped folders: assets_1 and models_1
 
 Rule nr. 2:
-Rule file Individual_houses_slope.cga for the generation of (late) associated with zipped folders: assets_2 and models_2
+Rule file Individual_houses_slope.cga for the generation of (late) Classical Greek domestic architecture associated with zipped folders: assets_2 and models_2
