@@ -1,0 +1,79 @@
+/**
+ * File:    ScaleBlocksShp.cga
+ * Created: 28 May 2015 13:58:02 GMT
+ * Author:  piccolicbm
+ */
+
+version "2015.1"
+
+
+#attributes
+attr LengthFIN = 0
+attr WidthFIN = 0
+attr HeightFIN = 0
+@Group("StoneType") @Order(2) @Description("Types of stones") @Range("Limestone","Conglomerate","Marble","Sandstone", "CityWallType", "Schist", "Tuff")
+attr StoneSymp = "Limestone"
+attr model3D = "yes"
+attr FileDAE = "models/TheatreSeat/TheatreSeat.obj" # in this example the 3D model of a supposed theatre seat is used, but a series of different 3D models can be included by using e.g. "model.*.obj" as file names
+attr red = "#FDF6FA"
+
+
+
+#constants
+const redText = "assets/textures/red.JPG"
+const orangeText = "assets/textures/orange.jpg"
+const whiteText = "assets/textures/white.jpg"
+const beigeText = "assets/textures/beige.jpg"
+const stripesText = "assets/textures/stripesgrey.jpg"
+const yellowText = "assets/textures/yellow.jpg"
+const brownText = "assets/textures/brown.jpg"
+const greyText = "assets/textures/grey.jpg"
+
+@StartRule 
+Lot --> case model3D == "yes" :
+		alignScopeToGeometry (yUp,1)
+		center (xyz)
+		s (LengthFIN*10, HeightFIN*10, WidthFIN*10 )
+		i (FileDAE)
+		Available3Dmodel.
+
+		else:
+		alignScopeToGeometry (yUp,1)
+		center (xyz)
+		s (WidthFIN*10, HeightFIN*10, LengthFIN*10)
+		i ("builtin.cube")
+		ScaleBlocks
+ScaleBlocks--> 
+		case StoneSymp == "Limestone" : 
+		setupProjection (0, scope.xz, 0.1,~0.1,0.1)
+		texture (stripesText)	
+		projectUV (0)
+		case StoneSymp == "Conglomerate" :
+		setupProjection (0, scope.xz, 0.3,~3,0.5)
+		texture (orangeText)	
+		projectUV (0)
+		case StoneSymp == "Marble" :
+		setupProjection (0, scope.xz, 0.3,~3,0.5)
+		texture (whiteText)	
+		projectUV (0)
+		case StoneSymp == "Sandstone" :
+		setupProjection (0, scope.xz, 0.3,~3,0.5)
+		texture (beigeText)	
+		projectUV (0)
+		case StoneSymp == "CityWallType":
+		setupProjection (0, scope.xz, 0.3,~3,0.5)
+		texture (yellowText)	
+		projectUV (0)
+		case StoneSymp == "Schist":
+		setupProjection (0, scope.xz, 0.3,~3,0.5)
+		texture (brownText)	
+		projectUV (0) 
+		case StoneSymp == "Tuff":
+		setupProjection (0, scope.xz, 0.3,~3,0.5)
+		texture (greyText)	
+		projectUV (0)
+		else :
+		//when information on stone type is missing from database, a red texture is applied
+		setupProjection (0, scope.xz, 0.3,~3,0.5)
+		texture (redText)	
+		projectUV (0)
