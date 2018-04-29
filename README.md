@@ -4,6 +4,6 @@ Rule for GIS-driven symbology:
 The rule file "Scale-StoneTypeShp.cga" for GIS-driven symbology (see Piccoli 2018, 228-32) is associated with zipped folders: assets_1 and models_1. 
 
 Rule for (late) Classical Greek architecture and street network:
-The rule file "Individual_houses_slope.cga" for the generation of (late) Classical Greek domestic architecture and the rule "streets-steps.cga" are associated with zipped folders: assets_2 and models_2. An example of a procedurally modelled house can be found [here] (https://sketchfab.com/models/796866cb0bd541c083ff82c61b0cff56)
+The rule file "Individual_houses_slope.cga" for the generation of (late) Classical Greek domestic architecture and the rule "streets-steps.cga" are associated with zipped folders: assets_2 and models_2. An example of a procedurally modelled house can be found at https://sketchfab.com/models/796866cb0bd541c083ff82c61b0cff56.
 
 Important! After downloading the folders, change their names to 'assets' and 'models' in order to guarantee the proper relation with the rule file.
