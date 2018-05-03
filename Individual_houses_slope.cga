@@ -1,0 +1,2604 @@
+/**
+ * File:    Individual_houses_slope.cga
+ * Created: 20 Mar 2016 11:26:30 GMT
+ * Author:  Chiara
+ */
+
+/*Important notes:
+This rule is distributed as supplementary material to C. Piccoli 2018. Visualizing cityscapes of Classical antiquity. From early modern reconstruction drawings to digital 3D model. Oxford: Archaeopress.
+It was tested with CE version 2015.2 and 2016.1 and is optimized for the generation of houses and public architecture in Koroneia's 3D scene. 
+The rule is constructed to constrain the creation of buildings according to a slope input value, but can be applied also to flat terrains. 
+To ensure the correct generation of the 3D geometry, the corner style of each node of the street network must be set to 'Straight' (minArcRadius = 0). 
+To switch on panels and points on the buildings' facades make sure HighLOD is enabled. 
+*/
+
+
+version "2015.2"
+
+import street : "Streets-steps.cga"
+
+@Hidden
+attr green = "#00FF00"
+attr yellow = "#FFFF00"
+attr orange = "#FF8000"
+attr red   = "#FF0000"
+attr blue = "#0000CD"
+attr white = "#FFFFFF"
+attr lightGreen = "#CCFFCC"
+attr lightPink = "#FFCCCC"
+const roofbrickC = "#886644"
+const greywall = 20% : "#EEEEEE" 20% : "#F5F5F5" 20% : "#FFFFFF" 20% : "#FFFFFF" else : "#FFFFFF"
+
+
+// ATTRIBUTES 
+
+@Group("LEVEL OF DETAIL")
+@Range (Low = 0, High = 1)
+attr LOD 				= 0 //controls vegetation's detail
+attr HighLOD 			= true //controls buildings' detail (must be set to true for facades' panelization)
+
+@Group ("VEGETATION")
+attr TreesNumber = 2
+attr TreeHeightMin = 5
+attr TreeHeightMax = 10
+
+@Group ("HOUSES DIMENSIONS")
+attr RoofShedSlope = 10
+attr wall = 0.6
+attr DoorOpeningRange = rand (1.2, 1.6) // cf. Halos, Haagsma 2003, 43.
+attr WingHeightTotal = groundfloorHeight +0.4
+attr groundfloorHeight = 2.2
+attr firstfloorHeight = 2
+
+
+attr porch = 70% : true
+			else : false
+
+
+// CATEGORIZATION OF HOUSES' FOOTPRINT SIZE
+footprintSize(geometry_area) = 
+ /* Classical houses greatly varied in size: 
+ A database of more than 300 hundred examples of houses in the Aegean from 800 to 300 BC shows a progressive 
+ increase in house size (Morris 2005, 108).   
+ In Athens some of the houses in the 5th c. BC residential block on the north foot of the Areopagus
+ were as small as 50-70 m2 (Nevett 1999, 86), while Houses C and D near the Great Drain were 130 and 225 m2 
+ respectively (Nevett 1999, 88). Evidence from Athens, Attica and Leucas shows that an average sized 
+ 5th and 4th c. BC dwelling covered around 130 m2 (Konecny 2013, Fiedler 2005, Nevett 2005, Tsakirgis 2005).   
+ The 'typical' 4th c. BC Olynthian house of the North Hill covered around 294 m2, while the houses on Row A
+ were on average 350 m2 (Ault 2005, 66).  
+ Exceptionally larger houses are also attested as the House of the Mosaics at Eretria with an area of 625 m2 
+ (Bintliff 2012, 300).
+ */
+	
+	case geometry_area <= 50: "empty"
+	case geometry_area >50 && geometry_area<= 70: "VerySmall"
+	case geometry_area >70 && geometry_area<= 130: "Small"
+	case geometry_area > 130 && geometry_area <= 300: "Medium"
+	case geometry_area > 300 && geometry_area <= 400: "Large"
+	else : "VeryLarge"
+
+
+// measurements for Oshapes, Ushapes and Lshapes 
+attr rightDepth = scope.sx*0.3
+attr backDepth = scope.sx*0.5
+attr leftDepth = scope.sx*0.3
+attr frontDepth = scope.sx*0.3
+
+//functions 
+mean(A,B) = (A+B)/2
+mod(A,B) = A - floor(A/B)*B // 'modulo operation' (remainder after division) used below to correctly identify the buildings' orientation  
+f2(A)= A - 2*float(A>=1)*(A-1)  // triangle function that goes from (0,0) to (1,1) to (2,0) used below to correctly identify the buildings' orientation 
+
+
+// TEXTURES PATHS
+const meadow_tex = "assets/garden/meadow2.jpg"
+const roof_tex1 = (fileRandom("assets/roofs/Roof.*.jpg"))
+const roof_tex2 = (fileRandom("assets/roofs/Roof.*.jpg"))
+const roof_tex3 = (fileRandom("assets/roofs/Roof.*.jpg"))
+const roof_tex4 = (fileRandom("assets/roofs/Roof.*.jpg"))
+const roof_tex5 = (fileRandom("assets/roofs/Roof.*.jpg"))
+const roof_bump = "assets/roofs/Roof_bump.jpg"
+attr RoofBumpValue = 0.8
+const roof_normal = "assets/roofs/Roof_bump.jpg"
+const general_dirt = (fileRandom("assets/dirtmaps/dirtmap.*.jpg")) # from CityEngine training material
+const court_tex = (fileRandom("assets/courtyards/courtyard_floor_*.jpg")) # from CityEngine training material (Medieval town)
+const Wall_tex = "Textures_houses/WallNoDirtGrey.jpg"
+const Wall_noDirt_tex = "Textures_houses/WallPlastered.jpg"
+const Wall_BottomDirt_tex = "Textures_houses/WallBottomDirt2.jpg"
+const Wall_bump = "Textures_houses/WallBump2.jpg"
+attr WallBumpValue = 0.3
+const Foundation_tex = "Textures_houses/FoundationText.jpg"
+const door_texture = "Textures_houses/TextureDoor.jpg"
+const door_normal_map = "Textures_houses/TextureDoorBUMP.jpg"
+attr DoorBumpValue = 0.2
+const wooden_pillar_tex = (fileRandom("assets/constructionPlanks/constr_plank_low_*")) # from CityEngine training material
+const stepsText = "assets/stoneblocks/StoneBlock.5.c.jpg" # from CityEngine training material
+const dirt_tex1 = fileRandom ("*/dirtmaps/dirtmap.*.jpg") # from CityEngine training material
+const streetBump = "assets/streets/Strada_terra_battuta_BUMP.jpg"
+const agoraText = "assets/Agora.jpg"
+
+//Plants (from Esri/LumenRT vegetation library):
+const Buckthorn = "assets/Plants/Mediterranean_Buckthorn/Mediterranean_Buckthorn_Model_0.obj"
+const Laurel = "assets/Plants/Bay_Laurel/Bay_Laurel_Model_0.obj"
+const Ficus = "assets/Plants/Ficus/Ficus_Model_0.obj"
+
+
+// float convert(coordSelector, fromSysSelector, toSysSelector, typeSelector, x, y, z)
+// The angle of the default pivot is compared against that of the target pivot to establish how many steps
+// the pivot has to shift to create the same angle with the world axes that the target pivot has
+y_angle = convert(y, pivot, world, orient,0,0,0)
+
+// Functions to set pivot of a lot such that the lot's initial pivot is guaranteed to be in a specific quadrant (see Piccoli 2018, 267-9)
+// ( 0 - SouthEast; 1 - NorthEast; 2 - NorthWest; 3 - SouthWest)
+setpivot_index_uncorrected = floor((y_angle+45)/90)
+setpivot_index0 = setpivot_index_uncorrected+0 - floor((setpivot_index_uncorrected+0)/4)*4 
+setpivot_index1 = setpivot_index_uncorrected+1 - floor((setpivot_index_uncorrected+1)/4)*4
+setpivot_index2 = setpivot_index_uncorrected+2 - floor((setpivot_index_uncorrected+2)/4)*4
+setpivot_index3 = setpivot_index_uncorrected+3 - floor((setpivot_index_uncorrected+3)/4)*4
+
+//slopeDegrees(sx,sy,sz) = atan (sy / ( (sx + sz)/2 )) This function was used in an earlier version, CE has now an in-built function to calculate the slope:
+slopeDegrees(sx,sy,sz) = geometry.angle(maxSlope)
+
+
+//START RULE
+@StartRule
+
+LotInner --> Lot
+
+Lot --> alignScopeToAxes (y)
+		//print (slopeDegrees) // uncomment if you need to query the lot's slope degree
+		Lot1
+	
+/*
+From "The Neighborhood Model: Building Block for the Development Areas", p. 106:
+On slopes 0 - 10% (0 - 5.71°) : most building can occur easily without major regrading
+On slopes 10 - 15% (5.71° - 8.53°) : moderate grading may be needed to support development
+On slopes 15 - 25% (8.53° - 14.04°) : more care with grading is needed so that extremely steep slopes are not created by regrading 
+On slopes 25% and greater : extreme care should be taken when building on slopes of 25% so slopes that are even steeper than 25% are not created
+Note however that archaeological evidence shows that hilly terrain were exploited for construction up to very steep slopes 
+such as at Ephesus, where the preferred slope was up to 30° of gradient (Groh 2012, 68).
+[at Petres of Florinas the hill's gradient was 30-45% (ca. 17° - 24°; see P. Adam-Veleni 2000, Petres of Florinas, 35 - the maximum gradient for construction on slope however is not given]. 
+*/
+Lot1 -->
+	case  slopeDegrees(scope.sx,scope.sy,scope.sz) > 13 : // this slope value can be changed to visualize different hypotheses (see Piccoli 2018, 253-9)
+		report("Area.Greenspace",geometry.area)
+		LotVegetation
+		
+	else:
+		alignScopeToAxes(y)
+		innerRectangle(edge) 
+		{shape: 
+			t(0,-3,0)
+			extrude(world.up,3)
+			comp(f)
+			{top: 
+				alignScopeToGeometry(yUp,0) 
+				alignScopeToAxes(y) 
+				setPivot (xyz, setpivot_index1)
+				// in this case I chose the N-E corner of the shape's scope as target pivot 
+				BuildingArea
+			|side:
+				alignScopeToGeometry(yUp,0)
+				TextureFoundation
+			} 
+		|remainder: 
+			TextureFoundation
+		}
+			
+			
+			
+BuildingArea -->		
+	// in case the foundation height is too large, split lot according to largest side
+	case (scope.sy>5)&&(scope.sx>scope.sz*1.6) :
+		split (x) {'0.5 : BuildingArea1 | '0.5 : BuildingArea1}
+	
+	case (scope.sy>5)&&(scope.sx*1.6<scope.sz) :
+		split (z) {'0.5 : BuildingArea1 | '0.5 : BuildingArea1}	
+		
+	case (scope.sy>5) :
+		split (z) {'0.5 : split (x) {'0.5 : BuildingArea1 | '0.5 : BuildingArea1} | '0.5 : split (x) {'0.5 : BuildingArea1 | '0.5 : BuildingArea1}}	
+		
+	// in case the shape is very rectangular, split in 2
+	case scope.sx>scope.sz*2 :
+		split (x) {'0.5 : BuildingArea1 | '0.5 : BuildingArea1}
+		
+	case scope.sz>scope.sx*2 :
+		split (z) {'0.5 : BuildingArea1 | '0.5 : BuildingArea1}
+		
+	case footprintSize(geometry.area) == "empty":
+		TextureAgora 
+		
+	else:
+		BuildingArea1
+		
+BuildingArea1 -->
+	alignScopeToAxes(y) 
+	setPivot(xyz, setpivot_index1)
+	shapeO(0.4,0.0,0.4,0.0) // same use as offset, but allows a different treatment of each side
+	{remainder:
+		alignScopeToAxes(y) 
+		setPivot(xyz, setpivot_index1)
+		report ("Area." + footprintSize(geometry.area) + "Houses", geometry.area)
+		BuildingArea2
+	|shape:
+		TextureFoundation
+	}
+	
+// Different house types are created based on the dimensions of the starting lot	
+BuildingArea2 -->
+	case scope.sx<7 :		
+		SmallHouse(scope.sy) 
+				
+	case scope.sx<11 :		
+		50%: SmallHouse(scope.sy) 
+		else: SmallHouseCourtyard
+		
+	case scope.sx<18 : 
+		50% : 
+			case scope.sz>1.3*scope.sx:
+				50%:
+					split(z)
+					{scope.sx:LshapedHouse(scope.sy,f2(mod((geometry.angle(azimuth)-135)/180,2))) // calculates compensation for terrain protruding from courtyard. For details regarding the parameters and their use, see below LshapedHouse(foundationHeight,azimuth) 
+					|0.6:TextureAgora															  // From CityEngine Help: Azimuth is the horizontal angle measured clockwise from the north, i.e. 90 degrees is east, 180 degrees is south and 270 degrees is west. Azimuth is in the range [0, 360]. 
+					|~1:SmallHouse(scope.sy)
+					}
+				else:
+					split(z)
+					{~1:SmallHouse(scope.sy)
+					|0.6:TextureAgora
+					|scope.sx:LshapedHouse(scope.sy,f2(mod((geometry.angle(azimuth)-135)/180,2)))
+					}
+			else:
+				LshapedHouse(scope.sy,f2(mod((geometry.angle(azimuth)-135)/180,2)))
+				
+		else :
+			MediumHouse
+		
+	case scope.sz<0.6*scope.sx : 	
+		UshapedHouse(scope.sy,f2(mod((geometry.angle(azimuth)-90)/180,2))) // calculates compensation for terrain protruding from courtyard. For details regarding the parameters and their use, see below UshapedHouse(foundationHeight,azimuth)
+		
+	case scope.sz<1*scope.sx : 
+		50% : UshapedHouse(scope.sy,f2(mod((geometry.angle(azimuth)-90)/180,2))) 
+		else: OshapedHouse(scope.sy)
+		
+	else: 
+		OshapedHouse(scope.sy)
+		
+
+//VEGETATION
+LotVegetation--> 
+	alignScopeToAxes (y)
+	TreeDensity
+	
+	
+TreeDensity--> 	
+	70% : 
+		Garden
+		
+	else : 
+		Garden
+		offset (-1, inside)
+		Trees
+		
+
+Garden --> 
+	setupProjection (0, scope.xz, 25, 25, rand(10), rand(5), 0)
+	texture (meadow_tex)	
+	projectUV (0)
+		
+		
+Trees --> 
+	scatter(surface, TreesNumber, gaussian) { Tree }
+
+
+Tree -->
+	case LOD > 0:
+		30% : 
+			alignScopeToAxes (y)
+			s(7,rand(TreeHeightMin,TreeHeightMax), 7) i(Buckthorn) 
+			t (0, -1, 0)
+			r(0,rand(360),0) 
+			
+		30% : 
+			alignScopeToAxes (y)
+			s(5,rand(TreeHeightMin,TreeHeightMax), 5) i(Laurel)
+			t (0, -1, 0)
+			r(0,rand(360),0) 
+			
+		else : 
+			alignScopeToAxes (y)
+			s(5,rand(TreeHeightMin,TreeHeightMax), 5) i(Ficus)
+			t (0, -1, 0)
+			r(0,rand(360),0) 
+		
+	else:
+		alignScopeToAxes (y)
+		s(5,rand(TreeHeightMin,TreeHeightMax), 5) i("assets/Plants/Ficus/Ficus_Fan_0.obj") 
+		r(0,rand(360),0) 
+
+
+////////////////////////////////////////////////////////////////////////////////////////
+// House Type 1 // - House with no courtyard associated with very small/small lots 		
+////////////////////////////////////////////////////////////////////////////////////////
+SmallHouse(foundationHeight)-->		
+	extrude(world.y, 100) 
+	split(y) 		
+	{ foundationHeight + groundfloorHeight:
+		SmallHouseGroundFloor
+	| firstfloorHeight:
+		SmallHouseFirstFloor
+	| ~1 : 
+		NIL 	
+	}  
+	
+
+SmallHouseFirstFloor-->
+	case HighLOD == false :
+		comp (f) 
+		{ side : Wall
+			
+		| top : 
+			roofGable(RoofShedSlope*2) 
+			comp (f) 
+			{ top : ColoredRoof // roofs are textured with a roof tile image - can be changed to simple color				
+			| side : Wall				
+			}			
+		}			
+		
+	case  (Panels_Generate == "None" || Panels_Generate == "Roofs") && (HighLOD == true):	
+		comp(f)
+		{ side: WallWithWindows
+		| top: 	roofGable(RoofShedSlope*2) 
+				Roof
+		}
+				
+	else : 
+		comp (f) 
+		{ side: 
+			alignScopeToAxes (y)
+			color (greywall) 
+			Panels("Wall") 
+			
+		| top : 
+			roofGable(RoofShedSlope*2) 
+			comp (f) {side : color(roofbrickC) Panels("Roof")}
+		}
+
+	
+SmallHouseGroundFloor-->
+	case HighLOD == false :
+		comp (f) { side : Wall}			
+		
+	case  (Panels_Generate == "None" || Panels_Generate == "Roofs") && (HighLOD == true):	
+		comp(f)
+		{ back:WallWithOneDoor	
+		| right: WallBottomDirt 
+		| front: WallBottomDirt 
+		| left:  WallBottomDirt
+		}
+								
+	else : 
+		comp (f) 
+		{ side: 
+			alignScopeToAxes (y)
+			color (greywall) 
+			Panels("Wall") 
+		}
+		
+WallWithOneDoor-->
+	case ((scope.sx>2.5)&&(scope.sy>2)):
+		// only show door if facade is large enough
+		alignScopeToAxes (y)
+		split (x) 
+			{~1 :
+				WallBottomDirt 
+				
+			| DoorOpeningRange :
+
+				split (y) 
+				{0.2: 
+					s ('1, 0.2 , 0.5)
+					center(xz)
+					i("builtin.cube") //Entrance threshold
+					comp (f) {side : StepsTex | top : StepsTex}
+																										
+				| 1.90: 
+					split (x) {0.2 : extrude (0.1) DoorPillarBack. | ~1 : DoorWoodTextXY | 0.2 : extrude (0.1) DoorPillarBack.} 
+					
+				| 0.4 : 
+					DoorTopFrame
+					
+				| ~1 : 
+					WallNoDirt
+				} 
+				
+			|~1 :
+				WallBottomDirt 
+			}
+		
+	else:
+		WallBottomDirt
+
+			
+WallWithWindows-->	
+	alignScopeToAxes (y)
+	split (y) 
+	{ ~0.6: WallNoDirt
+	| 1 : split (x)
+		{ 0.5 : WallNoDirt
+		| ~2.5: WallNoDirt
+		| 	{ 0.1 : extrude (0.05) 
+				  s (scope.sx, scope.sy, scope.sz - 0.2)
+				  center (z)
+				  WindowPillar. 
+				  
+			| 1 :   split (y) 
+					{0.1 : 
+						extrude (0.1)
+						s (scope.sx+ 0.2, scope.sy, scope.sz )
+						center (x)
+						WindowBottom. 
+											
+					| ~1 : 
+						SecondaryDoorText 
+					
+					| 0.1:
+						extrude (0.1)
+						s (scope.sx+ 0.2, scope.sy, scope.sz )
+						center (x)
+						WindowTop.
+					}
+			
+			| 0.1 : extrude (0.05) 
+					s (scope.sx, scope.sy, scope.sz - 0.2)
+					center (z)
+					WindowPillar. 
+					
+			| ~2.5 :WallNoDirt
+			}*
+		| 0.5: WallNoDirt 
+		}
+	| ~0.4: WallNoDirt
+	}
+		
+		
+		
+WallWithWindowsDense(space)-->	
+	alignScopeToAxes (y)
+	split (y) 
+	{ ~0.6: WallNoDirt
+	| 1 : split (x)
+		{~space: WallNoDirt
+		| 	{ 0.1 : extrude (0.05) 
+				  s (scope.sx, scope.sy, scope.sz - 0.2)
+				  center (z)
+				  WindowPillar. 
+				  
+			| 1 :   split (y) 
+					{0.1 : 
+						extrude (0.1)
+						s (scope.sx+ 0.2, scope.sy, scope.sz)
+						center (x)
+						WindowBottom. 
+											
+					| ~1 : 
+						SecondaryDoorText 
+					
+					| 0.1:
+						extrude (0.1)
+						s (scope.sx+ 0.2, scope.sy, scope.sz)
+						center (x)
+						WindowTop.
+					}
+			
+			| 0.1 : extrude (0.05) 
+					s (scope.sx, scope.sy, scope.sz - 0.2)
+					center (z)
+					WindowPillar. 
+					
+			| ~space :WallNoDirt
+			}*
+		}
+	| ~0.4: WallNoDirt
+	}
+
+				
+WallWithWindow-->	
+	80%:
+		alignScopeToAxes (y)
+		split (y) 
+		{ ~0.6: WallNoDirt
+		| 1 :  split (x)
+			{ ~2.5: WallNoDirt
+			| 	 0.1 : extrude (0.05) 
+					  s (scope.sx, scope.sy, scope.sz - 0.2)
+					  center (z)
+					  WindowPillar. 
+					  
+				| rand(0.6,0.8) :   split (y) 
+						{0.1 : 
+							extrude (0.1)
+							s (scope.sx+ 0.2, scope.sy, scope.sz)
+							center (x)
+							WindowBottom. 
+												
+						| ~1 : 
+							SecondaryDoorText 
+						
+						| 0.1:
+							extrude (0.1)
+							s (scope.sx+ 0.2, scope.sy, scope.sz)
+							center (x)
+							WindowTop.
+						}
+				
+				| 0.1 : extrude (0.05) 
+						s (scope.sx, scope.sy, scope.sz - 0.2)
+						center (z)
+						WindowPillar. 
+						
+				| ~2.5 :WallNoDirt
+				
+			}
+			
+		| ~0.4: WallNoDirt
+		}
+	else : WallNoDirt
+					
+
+/////////////////////////////////////////////////
+// House Type 2 // House with courtyard 
+/////////////////////////////////////////////////
+MediumHouse--> 
+	split (z) 
+	{ ~0.3 : 
+		alignScopeToAxes (y)
+		MediumHouseFront(scope.sx*0.2,scope.sy)
+		
+	| ~0.7 :
+		alignScopeToAxes (y)
+		MediumHouseBack(scope.sy)
+	} 
+	
+
+MediumHouseBack(foundationHeight) --> 
+	comp(f) 
+	{top: 
+		alignScopeToAxes (y)
+		setPivot (xyz, setpivot_index1)	
+		extrude(world.y, 100)
+		split(y) 
+		{foundationHeight*0.5 + groundfloorHeight + 0.4: 
+			MediumHouseGroundFloor(foundationHeight*0.25 + groundfloorHeight + 0.2)
+		| 0.30 : 
+			comp (f) { side : WallNoDirt}
+		|firstfloorHeight: 
+			MediumHouseFirstFloor 
+		| ~1 : 
+			NIL 
+		}
+	}
+			
+MediumHouseFirstFloor-->
+	case HighLOD == false :
+		comp (f) 
+		{ side : WallNoDirt
+			
+		| top : 
+			roofGable(rand(17,23)) 
+			comp (f) 
+			{ top : ColoredRoof 				
+			| side : WallNoDirt				
+			}			
+		}			
+		
+	case  (Panels_Generate == "None" || Panels_Generate == "Roofs") && (HighLOD == true):	
+		comp(f)
+		{ front: WallWithWindows
+		| left: WallWithWindows
+		| right: WallWithWindows
+		| back: 
+			split(x){ 
+			scope.sx*0.2: WallNoDirt 
+			| ~1: Gallery1("Medium",scope.sx,scope.sy,galleryDepth)
+			| scope.sx*0.2: WallNoDirt
+			}
+		| top: 	
+			roofGable(rand(17,23)) 
+			Roof
+		}
+				
+	else : 
+		comp (f) 
+		{ side: 
+			alignScopeToAxes (y)
+			color (greywall) 
+			Panels("Wall") 
+			
+		| top : 
+			roofGable(rand(17,23)) 
+			comp (f) {side : color(roofbrickC) Panels("Roof")}
+		}
+		
+		
+MediumHouseGroundFloor(porchHeight)-->
+	case HighLOD == false :
+		comp (f) { side : Wall}			
+		
+	case  (Panels_Generate == "None" || Panels_Generate == "Roofs") && (HighLOD == true):	
+		//GroundFloorOlynthianType
+		case (porch==false) :
+			comp(f)
+			{ back : 			
+				alignScopeToAxes (y)
+				split (x) 
+				{'0.2:
+					WallNoDirt
+				| ~1 : 
+					WallWithWindow 
+					
+				| DoorOpeningRange : 	
+					split (y) 
+					{0.2: 
+						s ('1, 0.2 , 0.5)
+						center(xz)
+						i("builtin.cube") //Entrance threshold
+						comp (f) {side : StepsTex | top : StepsTex}
+																											
+					| 1.90: 
+						split (x) {0.2 : extrude (0.1) DoorPillarBack. | ~1 : DoorWoodTextXY | 0.2 : extrude (0.1) DoorPillarBack.} 
+						
+					| 0.4 : 
+						DoorTopFrame
+						
+					| ~1 : 
+						WallNoDirt
+					} 
+						
+				| ~1 : 
+					WallWithWindow 
+				| '0.2:
+					WallNoDirt
+				}
+				
+			| front:  WallBottomDirt 
+			| left:  WallBottomDirt 
+			| right:  WallBottomDirt
+			}
+		else :
+			comp(f)
+			{ back : 
+				alignScopeToAxes (y)
+				split(x)
+				{'0.2 : 
+					WallNoDirt 
+					
+				|~1 : 
+					split(y) 
+					{~1:  NIL 
+					| 0.1 :
+						t(0,-porchHeight+0.1,0)
+						s('1,porchHeight,'1)
+						PorchGroundFloor("Medium",scope.sx,scope.sy,galleryDepth*1.5)
+					}
+					
+				| '0.2:
+					WallNoDirt
+				}
+						
+			| front: WallBottomDirt 
+			| left: WallBottomDirt 
+			| right: WallBottomDirt
+			}
+								
+	else : 
+		comp (f) 
+		{ side: 
+			alignScopeToAxes (y)
+			color (greywall) 
+			Panels("Wall") 
+		}
+	
+
+MediumHouseFront(wingDepth,foundationHeight)--> 
+	alignScopeToAxes (y)
+	split (x) 
+	{wingDepth : 
+		alignScopeToAxes (y)
+		extrude(world.y, 100)
+		split(y) 
+		{ WingHeightTotal + 0.6: 
+			MediumHouseShop
+		| ~1 : 
+			NIL 
+		} 
+		
+	| ~1 : 
+		split (z) 
+		{wall:	
+			extrude(world.y,WingHeightTotal)
+			alignScopeToAxes(y)
+			setPivot (xyz, setpivot_index1)	
+			CourtyardWallFacades(convert(x, pivot, world, pos, 0,0,0),convert(y, pivot, world, orient, 0,0,0)*cos(convert(x, pivot, world, orient, 0,0,0))+convert(x, pivot, world, orient, 0,0,0),convert(z, pivot, world, pos, 0,0,0),scope.sx,scope.sz*4) 				
+			
+		| ~1 : 
+			alignScopeToAxes (y)
+			comp (f) { top: CourtTextXY }
+		} 
+						
+	| wingDepth : 
+		alignScopeToAxes (y)
+		extrude(world.y, 100)
+		split(y) 
+		{ WingHeightTotal + 0.6: 
+			MediumHouseAndron
+		| ~1 : 
+			NIL
+		}
+	}
+						
+						
+// 'Shop' wing 						
+MediumHouseShop --> 
+	case HighLOD == true :
+		comp(f) 
+		{ 0 : NIL 
+		| back : WallBottomDirt
+		| front : WallBottomDirt
+		| left : WallBottomDirt
+		| right : WallWithOneDoor
+		| top : MediumHouseShopRoof
+		} 
+			
+	else :  
+		comp(f) 
+		{side : 
+			Wall 
+		| top : 
+			roofGable(RoofShedSlope*2) 
+			comp (f) 
+			{top : ColoredRoof 
+			| side : Wall
+			}
+		}
+
+			
+MediumHouseShopRoof --> 
+	case geometry.nVertices == 4 : 
+		alignScopeToAxes (y) 
+		roofShed(RoofShedSlope, -setpivot_index0) 
+		Roof
+		
+	else : 
+		alignScopeToAxes (y) 
+		setPivot (xyz, setpivot_index1) 
+		roofGable(RoofShedSlope) 
+		Roof	
+					
+					
+// 'Andron' wing 						
+MediumHouseAndron --> 
+	case HighLOD == true :
+		comp(f) 
+		{ 0 : NIL 
+		| front : WallBottomDirt
+		| right : WallBottomDirt
+		| back : WallBottomDirt
+		| left : WallWithOneDoor
+		| top : MediumHouseAndronRoof
+		} 
+			
+	else :  
+		comp(f) 
+		{side : 
+			Wall 
+		| top : 
+			roofGable(RoofShedSlope*2) 
+			comp (f) 
+			{top : ColoredRoof 
+			| side : Wall
+			}
+		}
+
+			
+MediumHouseAndronRoof --> 
+	case geometry.nVertices == 4 : 
+		alignScopeToAxes (y) 
+		roofShed(RoofShedSlope, -setpivot_index2) 
+		Roof
+		
+	else : 
+		alignScopeToAxes (y) 
+		setPivot (xyz, setpivot_index1) 
+		roofGable(RoofShedSlope) 
+		Roof	
+
+
+//////////////////////////////////////////////////////
+// House Type 1.5 // Small house with courtyard 
+//////////////////////////////////////////////////////
+
+SmallHouseCourtyard--> 
+	split (z) 
+	{ ~0.3 : 
+		alignScopeToAxes (y)
+		SmallHouseCourtyardFront(scope.sx*0.2,scope.sy)
+		
+	| ~0.7 :
+		alignScopeToAxes (y)
+		SmallHouseCourtyardBack(scope.sy)
+	} 
+	
+SmallHouseCourtyardBack(foundationHeight) --> 
+	comp(f) 
+	{top:
+		alignScopeToAxes (y)
+		setPivot (xyz, setpivot_index1)	
+		extrude(world.y, 100)
+		split(y) 
+		{foundationHeight*0.5 + groundfloorHeight + 0.4: 
+			SmallHouseCourtyardGroundFloor(foundationHeight*0.25 + groundfloorHeight + 0.2)
+		| 0.30 : 
+			comp (f) { side : WallNoDirt}
+		|firstfloorHeight: 
+			SmallHouseCourtyardFirstFloor 
+		| ~1 : 
+			NIL 
+		}
+	}
+			
+
+SmallHouseCourtyardFirstFloor-->
+	case HighLOD == false :
+		comp (f) 
+		{ side : WallNoDirt
+			
+		| top : 
+			roofGable(rand(17,23)) 
+			comp (f) 
+			{ top : ColoredRoof 				
+			| side : WallNoDirt				
+			}			
+		}			
+		
+	case  (Panels_Generate == "None" || Panels_Generate == "Roofs") && (HighLOD == true):	
+		comp(f)
+		{ front: WallWithWindows
+		| left: WallWithWindows
+		| right: WallWithWindows
+		| back: 
+			split(x)
+			{wall: WallNoDirt
+			|~1:Gallery1("Medium",scope.sx,scope.sy,galleryDepth)
+			|wall: WallNoDirt
+			}
+		| top: 	
+			roofGable(rand(17,23)) 
+			Roof
+		}
+				
+	else : 
+		comp (f) 
+		{ side: 
+			alignScopeToAxes (y)
+			color (greywall) 
+			Panels("Wall") 
+			
+		| top : 
+			roofGable(rand(17,23)) 
+			comp (f) {side : color(roofbrickC) Panels("Roof")}
+		}
+		
+		
+SmallHouseCourtyardGroundFloor(porchHeight)-->
+	case HighLOD == false :
+		comp (f) { side : Wall}			
+		
+	case  (Panels_Generate == "None" || Panels_Generate == "Roofs") && (HighLOD == true):	
+		//Ground floor 'Olynthian type'
+			comp(f)
+			{ back : 
+				alignScopeToAxes (y)
+				split(x)
+				{wall: WallNoDirt 					
+				|~1 : PorchGroundFloor1("Medium",mean(scope.sy,porchHeight),galleryDepth*1.5)					
+				|wall: WallNoDirt
+				}
+						
+			| front: WallBottomDirt 
+			| left: WallBottomDirt 
+			| right: WallBottomDirt
+			}
+								
+	else : 
+		comp (f) 
+		{ side: 
+			alignScopeToAxes (y)
+			color (greywall) 
+			Panels("Wall") 
+		}
+		
+											
+SmallHouseCourtyardFront(wingDepth,foundationHeight)--> 
+	setPivot (xyz, setpivot_index3)	
+	shapeU(wall, wall, wall ) 
+	{shape: 
+		extrude(world.y,WingHeightTotal)
+		alignScopeToAxes(y)
+		setPivot (xyz, setpivot_index1)	
+		CourtyardWallFacades(convert(x, pivot, world, pos, 0,0,0),convert(y, pivot, world, orient, 0,0,0)*cos(convert(x, pivot, world, orient, 0,0,0))+convert(x, pivot, world, orient, 0,0,0),convert(z, pivot, world, pos, 0,0,0),scope.sx,scope.sz)
+		
+		
+	|remainder:
+		extrude(world.up.flatTop,0)
+		t(0,-foundationHeight/2,0)
+		CourtText
+	}
+
+
+CourtyardWallFacades(x1,y1,z1,sx,sz)-->
+	case HighLOD == false :
+		comp (f) 
+		{ side : 
+			WallBottomDirt
+			
+		| top : 
+			roofGable(RoofShedSlope*2) 
+			comp (f) 
+			{ top : ColoredRoof 				
+			| side : WallNoDirt				
+			}			
+		}			
+		
+	case  (Panels_Generate == "None" || Panels_Generate == "Roofs") && (HighLOD == true):
+		comp(f)
+		{ top: 
+			roofGable(RoofShedSlope*2) 
+			Roof
+			
+		| side:
+			alignScopeToAxes (y) 	
+			CourtyardWallFacades_intern(CourtyardWallFacades_i(convert(x, pivot, world, pos, 0,0,0)-x1,90+y1,convert(y, pivot, world, orient, 0,0,0)*cos(convert(x, pivot, world, orient, 0,0,0))+convert(x, pivot, world, orient, 0,0,0)-y1,convert(z, pivot, world, pos, 0,0,0)-z1,sx,sz))
+		}		
+		
+	else : 
+		comp (f) 
+		{ side:	Panels("Wall") 		
+		| top : Panels("Roof")
+		}
+
+
+CourtyardWallFacades_intern(i)-->
+	case i==1: 
+		WallWithOneDoor  
+			
+	case i==2: 
+		alignScopeToAxes(y)
+		split(x) 
+		{~1: 
+			WallNoDirt
+			t(0,-scope.sy/2,-0.001) 
+			WallNoDirt
+		| 0.8: 	DoorSteps(6)
+				split (y) 
+				{~1:WallNoDirt
+				|1.9 : SecondaryDoorText
+				|WingHeightTotal-2.1 : WallNoDirt
+				}
+		|~1: 
+			WallNoDirt
+			t(0,-scope.sy/2,-0.001) 
+			WallNoDirt
+		}
+			
+	case i==3 : 
+		WallBottomDirt
+			
+	case i==4 : 
+		alignScopeToAxes(y)
+		WallNoDirt 
+		t(0,-scope.sy/2,-0.001) 
+		WallNoDirt
+	
+	else : 
+		print("Error: 'CourtyardFacades' function should return value in [1..4] range: " + i)
+		NIL
+		
+	
+CourtyardWallFacades_i(dx,y1,dy,dz,sx,sz)=
+	CourtyardWallFacades_i2((sin(y1)*dx+cos(y1)*dz), 2+ (dy+45)/90, -(cos(y1)*dx-sin(y1)*dz), sx, sz)
+	
+		
+CourtyardWallFacades_i2(xt,yt,zt,sx,sz)=
+	CourtyardWallFacades_i3(float((xt<(wall/2))||(xt>(sx-wall/2))), floor(yt)-floor(yt/4)*4,float((zt<(wall/2))||(zt>(sz-wall/2))))
+		
+CourtyardWallFacades_i3(xt,yt,zt)= #xt, zt = coord; yt = angle
+	1*float((yt==0)&&(zt==1)) +				// east side, door street 
+	2*float((yt==2)&&(zt==0)) +				// west side, door court
+	3*float((yt==0)&&(zt==0)) +				// street side
+	4*float((yt==2)&&(zt==1)) +				// court side
+	3*float(((yt==1)||(yt==3))&&(xt==1)) +	// street side
+	4*float(((yt==1)||(yt==3))&&(xt==0))	// court side
+					
+
+//////////////////////////////////////////
+// House Type 3 // U-shaped building
+//////////////////////////////////////////
+// The azimuth parameter (value between 0 and 1) is here the compensation needed to increase the foundationheight in case the terrain underlying the courtyard is ascending, 
+// in which case the terrain would intersect with the courtyard.
+// The compensation is maximal (value 1) for houses in the NorthEast portion of the hill.
+// Thanks to J.B. van Klinken for this suggestion.
+UshapedHouse(foundationHeight,azimuth) --> 
+	shapeU (scope.sz*0.5, scope.sx*0.3, scope.sx*0.3 ) 
+	{shape : 
+		alignScopeToAxes(y)	
+		comp(f)
+		{top:
+			extrude(world.y, 100)
+			split(y) 
+			{foundationHeight*0.5 + groundfloorHeight + 0.4: 
+				UshapedHouseGroundFloor(foundationHeight*azimuth*0.25 + groundfloorHeight + 0.2)
+			| 0.30 : 
+				comp (f) { side : WallNoDirt}
+			|firstfloorHeight: 
+				UshapedHouseFirstFloor 
+			| ~1 : 
+				NIL 
+			}
+		}
+		
+	|remainder : 
+		alignScopeToAxes(y)
+		UshapedHouseCourt(scope.sy+foundationHeight*(1-azimuth)*0.1)
+	}		 
+			
+
+
+UshapedHouseFirstFloor-->
+	case HighLOD == false :
+		comp (f) 
+		{ side : WallNoDirt
+			
+		| top : 
+			roofGable(rand(17,23)) 
+			comp (f) 
+			{ top : ColoredRoof 				
+			| side : WallNoDirt				
+			}			
+		}			
+		
+	case  (Panels_Generate == "None" || Panels_Generate == "Roofs") && (HighLOD == true):
+		alignScopeToAxes(y)
+		setPivot (xyz, setpivot_index1)	
+		UshapedHouseFirstFloorFacades(convert(x, pivot, world, pos, 0,0,0),convert(y, pivot, world, orient, 0,0,0)*cos(convert(x, pivot, world, orient, 0,0,0))+convert(x, pivot, world, orient, 0,0,0),convert(z, pivot, world, pos, 0,0,0),scope.sx,scope.sz)
+				
+	else : 
+		comp (f) 
+		{ side: 
+			alignScopeToAxes (y)
+			color (greywall) 
+			Panels("Wall") 
+			
+		| top : 
+			roofGable(rand(17,23)) 
+			comp (f) {side : color(roofbrickC) Panels("Roof")}
+		}
+		
+
+UshapedHouseGroundFloor(porchHeight)-->
+	case HighLOD == false :
+		comp (f) { side : Wall}			
+		
+	case  (Panels_Generate == "None" || Panels_Generate == "Roofs") && (HighLOD == true):	
+		alignScopeToAxes(y)
+		setPivot (xyz, setpivot_index1)	
+		UshapedHouseGroundFloorFacades(porchHeight,convert(x, pivot, world, pos, 0,0,0),convert(y, pivot, world, orient, 0,0,0)*cos(convert(x, pivot, world, orient, 0,0,0))+convert(x, pivot, world, orient, 0,0,0),convert(z, pivot, world, pos, 0,0,0),scope.sx,scope.sz)
+								
+	else : 
+		comp (f) 
+		{ side: 
+			alignScopeToAxes (y)
+			color (greywall) 
+			Panels("Wall") 
+		}
+
+// For the various house types it is important to be able to identify the facades after the component split, since CityEngine has no inbuilt functions to do so.
+// For instance, the L-shaped houses have 6 facades and the U-shaped houses have 8 facades, each having a different texture and geometry. Specifically, with 
+// the inbuilt functions it is not possible to coherently distinguish between e.g. east oriented facades that face the courtyard or street.
+// To circumvent this problem the (L/U/O)shapedHouse(Ground/First)FloorFacades function receives as parameters:
+// x1 - x position in world coordinates of the Floor's geometry
+// y1 - y angle (degrees) in world coordinates of the Floor's geometry
+// z1 - z position in world coordinates of the Floor's geometry
+// sx - scope.sx of the Floor's geometry
+// sz - scope.sz of the Floor's geometry
+//
+// Subsequently the component split is performed and for each side (i.e. facade) the mathematical function (L/U/O)shapedHouse(Ground/First)FloorFacades_i is called with as 
+// parameters the facade's world coordinates and y-axis angle, which then determines the proper index of each facade. Finally, the facade index is given as a parameter 
+// to the function (L/U/O)shapedHouse(Ground/First)FloorFacades_intern, which creates the geometry specific for that facade.
+// Thanks to J.B. van Klinken for developing the indexation function.
+		
+UshapedHouseFirstFloorFacades(x1,y1,z1,sx,sz)-->	
+	comp(f)
+	{ side:
+		alignScopeToAxes (y) 	
+		UshapedHouseFirstFloorFacades_intern(UshapedHouseFacades_i(convert(x, pivot, world, pos, 0,0,0)-x1,90+y1,convert(y, pivot, world, orient, 0,0,0)*cos(convert(x, pivot, world, orient, 0,0,0))+convert(x, pivot, world, orient, 0,0,0)-y1,convert(z, pivot, world, pos, 0,0,0)-z1,sx,sz))
+	| top: 	
+		roofGable(rand(17,23)) 
+		Roof
+	}
+	
+	
+UshapedHouseGroundFloorFacades(porchHeight,x1,y1,z1,sx,sz)-->	
+	comp(f)
+	{ side : 
+		alignScopeToAxes (y)
+		UshapedHouseGroundFloorFacades_intern(porchHeight,UshapedHouseFacades_i(convert(x, pivot, world, pos, 0,0,0)-x1,90+y1,convert(y, pivot, world, orient, 0,0,0)*cos(convert(x, pivot, world, orient, 0,0,0))+convert(x, pivot, world, orient, 0,0,0)-y1,convert(z, pivot, world, pos, 0,0,0)-z1,sx,sz))
+	}
+
+
+	
+UshapedHouseGroundFloorFacades_intern(porchHeight,i) --> 
+	case scope.sz>0.01:
+		NIL
+		
+	case i==1 : 
+		WallBottomDirt 
+		
+	case i==2 : 
+		alignScopeToAxes (y)
+		split(x)
+		{wall : WallNoDirt
+		|~1: PorchGroundFloor1("Ushape1",mean(scope.sy,porchHeight)*(1-float(porch)) + porchHeight*(float(porch)),galleryDepth*1.5)
+		}
+			
+	case i==3 : 
+		PorchGroundFloor1("Ushape2",mean(scope.sy,porchHeight)*(1-float(porch)) + porchHeight*(float(porch)),galleryDepth*1.5)
+		
+	case i==4 : 
+		alignScopeToAxes (y)
+		split(x)
+		{~1: PorchGroundFloor1("Ushape3",mean(scope.sy,porchHeight)*(1-float(porch)) + porchHeight*(float(porch)),galleryDepth*1.5)
+		|wall : WallNoDirt
+		}
+			
+	case i==5 : 
+		WallBottomDirt 
+		
+	case i==6 : 
+		WallBottomDirt 	
+		
+	case i==7 :		
+		WallBottomDirt 	
+		
+	case i==8 :
+		WallBottomDirt 	
+		
+	else : 
+		print("Error: 'Ufacades' function should return value in [3..8] range: " + i)
+		NIL
+				
+	
+UshapedHouseFirstFloorFacades_intern(i) --> 
+	case i==1 : 
+		WallWithWindows	
+		
+	case i==2 : 
+		split(x)
+		{0.6: 
+			WallNoDirt
+		|~1: 
+			split(y)
+			{gazeboBeamWidth: WoodTexture
+			|~1:Gallery1("Ushape1",scope.sx,scope.sy,galleryDepth)
+			|gazeboBeamWidth: WoodTexture
+			}
+		}	
+		
+	case i==3 : 
+		split(y)
+		{gazeboBeamWidth: WoodTexture
+		|~1:Gallery1("Ushape2",scope.sx,scope.sy,galleryDepth)
+		|gazeboBeamWidth: WoodTexture
+		}
+					
+	case i==4 : 
+		split(x)
+		{~1: 
+			split(y)
+			{gazeboBeamWidth: WoodTexture
+			|~1:Gallery1("Ushape3",scope.sx,scope.sy,galleryDepth)
+			|gazeboBeamWidth: WoodTexture
+			}
+		|0.6: WallNoDirt
+		}
+			
+	case i==5 : 
+		WallWithWindows	
+		
+	case i==6 : 
+		WallWithWindows	
+		
+	case i==7 : 
+		WallWithWindows	
+		
+	case i==8 :
+		WallWithWindows	
+		
+	else : 
+		print("Error: 'Ufacades' function should return value in [3..8] range: " + i)
+		NIL
+		
+					
+UshapedHouseFacades_i(dx,y1,dy,dz,sx,sz)=
+	UshapedHouseFacades_i2((sin(y1)*dx+cos(y1)*dz)/sx, 2+ (dy+45)/90, -(cos(y1)*dx-sin(y1)*dz)/sz)
+	
+		
+UshapedHouseFacades_i2(xt,yt,zt)=
+	UshapedHouseFacades_i3(1*float(xt>0.5), floor(yt)-floor(yt/4)*4, 1*float((zt>0.1)&&(zt<=0.9)) + 2*float(zt>0.9))
+		
+UshapedHouseFacades_i3(xt,yt,zt)=
+	1*float((yt==0)&&(zt==0)&&(xt==1)) +	// east side, street left
+	2*float((yt==1)&&(xt==1)) +				// north side, court
+	3*float((yt==0)&&(zt==1)) +				// east side, court
+	4*float((yt==3)&&(xt==0)) +				// south side, court
+	5*float((yt==0)&&(zt==0)&&(xt==0)) +	// east side, street right
+	6*float((yt==1)&&(xt==0)) +				// north side, street
+	7*float((yt==2)) +						// west side, street
+	8*float((yt==3)&&(xt==1))				// south side, street				
+					
+					
+UshapedHouseCourt(foundationHeight) --> 	
+	setPivot (xyz, setpivot_index1)	
+	split(z) 
+	{wall: 
+		extrude(world.y,WingHeightTotal)
+		alignScopeToAxes(y)
+		setPivot (xyz, setpivot_index1)	
+		CourtyardWallFacades(convert(x, pivot, world, pos, 0,0,0),convert(y, pivot, world, orient, 0,0,0)*cos(convert(x, pivot, world, orient, 0,0,0))+convert(x, pivot, world, orient, 0,0,0),convert(z, pivot, world, pos, 0,0,0),scope.sx,scope.sz*4)
+		
+	|~1:
+		extrude(world.up.flatTop,0)
+		t(0,-foundationHeight/2,0)
+		CourtText
+	}
+
+UshapedHouseWall-->
+	case HighLOD == false :
+		comp (f) 
+		{ side : 
+			WallBottomDirt
+			
+		| top : 
+			roofGable(RoofShedSlope*2) 
+			comp (f) 
+			{ top : ColoredRoof 				
+			| side : WallNoDirt				
+			}			
+		}			
+		
+	case  (Panels_Generate == "None" || Panels_Generate == "Roofs") && (HighLOD == true):
+		comp (f) 
+		{ top: 
+			roofGable(RoofShedSlope*2) 
+			Roof
+			
+		| back: 
+			WallWithOneDoor  
+			
+		| front : 
+			alignScopeToAxes(y)
+			split(x) 
+			{~1: 
+				WallNoDirt
+				t(0,-scope.sy/2,-0.001) 
+				WallNoDirt
+			| 0.8: 	split (y) 
+					{~1:WallNoDirt
+					|1.7 : SecondaryDoorText
+					|0.9 : WallNoDirt
+					}
+			|~1: 
+				WallNoDirt
+				t(0,-scope.sy/2,-0.001) 
+				WallNoDirt
+			}
+			
+		| left : 
+			WallBottomDirt
+			
+		| right : 
+			alignScopeToAxes(y)
+			WallNoDirt 
+			t(0,-scope.sy/2,-0.001) 
+			WallNoDirt
+		}
+		
+	else : 
+		comp (f) 
+		{ side:	Panels("Wall") 		
+		| top : Panels("Roof")
+		}
+
+# Gallery (parameters modified from rule Pompeii - CityEngine training materials)
+const gallerySpacing 				= rand(2.0,2.4)
+const galleryDepth 					= rand(2.0,2.5)
+
+# Gazebo
+const gazeboBeamWidth 				= 0.1
+
+const woodTex 						= fileRandom("assets/wood/wood.c.0*.v.jpg")
+
+# Pillars
+const pillarBaseWidth = 0.2
+const pillarBaseWidthPorch = 0.25
+const pillarSpace = 2	
+						
+
+////////////////////////////////////////////////
+// House Type 4 // L-shaped building
+////////////////////////////////////////////////
+// The azimuth parameter (value between 0 and 1) is here the compensation needed to increase the foundationheight in case the terrain underlying the courtyard is ascending, 
+// in which case the terrain would intersect with the courtyard.
+// The compensation is maximal (value 1) for houses in the NorthEast portion of the hill.
+// Thanks to J.B. van Klinken for this suggestion.
+LshapedHouse(foundationHeight,azimuth) --> 
+	shapeL(min(scope.sx,scope.sz)*0.6,min(scope.sx,scope.sz)*0.6) 
+	{shape : 
+		alignScopeToAxes(y)	
+		comp(f) 
+		{top:
+			extrude(world.y, 100)
+			split(y) 
+			{foundationHeight*0.5 + groundfloorHeight + 0.4: 
+				LshapedHouseGroundFloor(foundationHeight*azimuth*0.25 + groundfloorHeight + 0.2)
+			| 0.30 : 
+				comp (f) { side : WallNoDirt}
+			|firstfloorHeight: 
+				LshapedHouseFirstFloor 
+			| ~1 : 
+				NIL 
+			}
+		}
+			
+	|remainder : 
+		alignScopeToAxes(y)
+		LshapedHouseCourt(scope.sy+foundationHeight*(1-azimuth)*0.1)
+	}	
+
+
+LshapedHouseFirstFloor-->
+	case HighLOD == false :
+		comp (f) 
+		{ side : WallNoDirt
+			
+		| top : 
+			roofGable(rand(17,23)) 
+			comp (f) 
+			{ top : ColoredRoof 				
+			| side : WallNoDirt				
+			}			
+		}			
+		
+	case  (Panels_Generate == "None" || Panels_Generate == "Roofs") && (HighLOD == true):
+		alignScopeToAxes(y)
+		setPivot (xyz, setpivot_index1)	
+		LshapedHouseFirstFloorFacades(convert(x, pivot, world, pos, 0,0,0),convert(y, pivot, world, orient, 0,0,0)*cos(convert(x, pivot, world, orient, 0,0,0))+convert(x, pivot, world, orient, 0,0,0),convert(z, pivot, world, pos, 0,0,0),scope.sx,scope.sz)
+				
+	else : 
+		comp (f) 
+		{ side: 
+			alignScopeToAxes (y)
+			color (greywall) 
+			Panels("Wall") 
+			
+		| top : 
+			roofGable(rand(17,23)) 
+			comp (f) {side : color(roofbrickC) Panels("Roof")}
+		}
+		
+LshapedHouseGroundFloor(porchHeight)-->
+	case HighLOD == false :
+		comp (f) { side : Wall}			
+		
+	case  (Panels_Generate == "None" || Panels_Generate == "Roofs") && (HighLOD == true):	
+		alignScopeToAxes(y)
+		setPivot (xyz, setpivot_index1)	
+		LshapedHouseGroundFloorFacades(porchHeight,convert(x, pivot, world, pos, 0,0,0),convert(y, pivot, world, orient, 0,0,0)*cos(convert(x, pivot, world, orient, 0,0,0))+convert(x, pivot, world, orient, 0,0,0),convert(z, pivot, world, pos, 0,0,0),scope.sx,scope.sz)
+								
+	else : 
+		comp (f) 
+		{ side: 
+			alignScopeToAxes (y)
+			color (greywall) 
+			Panels("Wall") 
+		}
+
+
+// For the various house types it is important to be able to identify the facades after the component split, since CityEngine has no inbuilt functions to do so.
+// For instance, the L-shaped houses have 6 facades and the U-shaped houses have 8 facades, each having a different texture and geometry. Specifically, with 
+// the inbuilt functions it is not possible to coherently distinguish between e.g. east oriented facades that face the courtyard or street.
+// To circumvent this problem the (L/U/O)shapedHouse(Ground/First)FloorFacades function receives as parameters:
+// x1 - x position in world coordinates of the Floor's geometry
+// y1 - y angle (degrees) in world coordinates of the Floor's geometry
+// z1 - z position in world coordinates of the Floor's geometry
+// sx - scope.sx of the Floor's geometry
+// sz - scope.sz of the Floor's geometry
+//
+// Subsequently the component split is performed and for each side (i.e. facade) the mathematical function (L/U/O)shapedHouse(Ground/First)FloorFacades_i is called with as 
+// parameters the facade's world coordinates and y-axis angle, which then determines the proper index of each facade. Finally, the facade index is given as a parameter 
+// to the function (L/U/O)shapedHouse(Ground/First)FloorFacades_intern, which creates the geometry specific for that facade.
+// Thanks to J.B. van Klinken for developing the indexation function.
+LshapedHouseFirstFloorFacades(x1,y1,z1,sx,sz)-->	
+	comp(f)
+	{ side:
+		alignScopeToAxes (y) 	
+		LshapedHouseFirstFloorFacades_intern(LshapedHouseFacades_i(convert(x, pivot, world, pos, 0,0,0)-x1,90+y1,convert(y, pivot, world, orient, 0,0,0)*cos(convert(x, pivot, world, orient, 0,0,0))+convert(x, pivot, world, orient, 0,0,0)-y1,convert(z, pivot, world, pos, 0,0,0)-z1,sx,sz))
+	| top: 	
+		roofGable(rand(17,23)) 
+		Roof
+	}
+	
+	
+LshapedHouseGroundFloorFacades(porchHeight,x1,y1,z1,sx,sz)-->	
+	comp(f)
+	{ side : 
+		alignScopeToAxes (y)
+		LshapedHouseGroundFloorFacades_intern(porchHeight,LshapedHouseFacades_i(convert(x, pivot, world, pos, 0,0,0)-x1,90+y1,convert(y, pivot, world, orient, 0,0,0)*cos(convert(x, pivot, world, orient, 0,0,0))+convert(x, pivot, world, orient, 0,0,0)-y1,convert(z, pivot, world, pos, 0,0,0)-z1,sx,sz))
+	}
+
+LshapedHouseGroundFloorFacades_intern(porchHeight,i) --> 
+	case scope.sz>0.01:
+		NIL
+		
+	case i==3 : 
+		alignScopeToAxes (y)
+		split(x)
+		{wall : WallNoDirt
+		|~1: PorchGroundFloor1("Lshape1",mean(scope.sy,porchHeight)*(1-float(porch)) + porchHeight*(float(porch)),galleryDepth*1.5)
+		}		
+	
+	case i==4 : 
+		alignScopeToAxes (y)
+		split(x)
+		{~1: PorchGroundFloor1("Lshape2",mean(scope.sy,porchHeight)*(1-float(porch)) + porchHeight*(float(porch)),galleryDepth*1.5)
+		|wall : WallNoDirt
+		}
+			
+	case i==5 : 
+		WallBottomDirt 
+		
+	case i==6 : 
+		WallBottomDirt 	
+		
+	case i==7 :		
+		WallBottomDirt 	
+		
+	case i==8 :
+		WallBottomDirt 	
+		
+	else : 
+		print("Error: 'Lfacades' function should return value in [3..8] range: " + i)
+		NIL
+				
+	
+LshapedHouseFirstFloorFacades_intern(i) --> 
+	case i==3 : 
+		split(x)
+		{0.6: 
+			WallNoDirt
+		|~1: 
+			split(y)
+			{gazeboBeamWidth: WoodTexture
+			|~1:Gallery1("Lshape1",scope.sx,scope.sy,galleryDepth)
+			|gazeboBeamWidth: WoodTexture
+			}
+		}		
+			
+	case i==4 : 
+		split(x)
+		{~1: 
+			split(y)
+			{gazeboBeamWidth: WoodTexture
+			|~1:Gallery1("Lshape2",scope.sx,scope.sy,galleryDepth)
+			|gazeboBeamWidth: WoodTexture
+			}
+		|0.6: WallNoDirt
+		}
+			
+	case i==5 : 
+		WallWithWindows	
+		
+	case i==6 : 
+		WallWithWindows	
+		
+	case i==7 : 
+		WallWithWindows	
+		
+	case i==8 :
+		WallWithWindows	
+		
+	else : 
+		print("Error: 'Lfacades' function should return value in [3..8] range: " + i)
+		NIL
+		
+		
+LshapedHouseCourt(foundationHeight) --> 	
+	setPivot (xyz, setpivot_index3)	
+	shapeL(wall, wall ) 
+	{shape: 
+		extrude(world.y,WingHeightTotal)
+		alignScopeToAxes(y)
+		setPivot (xyz, setpivot_index1)	
+		CourtyardWallFacades(convert(x, pivot, world, pos, 0,0,0),convert(y, pivot, world, orient, 0,0,0)*cos(convert(x, pivot, world, orient, 0,0,0))+convert(x, pivot, world, orient, 0,0,0),convert(z, pivot, world, pos, 0,0,0),scope.sx,scope.sz)
+
+	|remainder:
+		extrude(world.up.flatTop,0)
+		t(0,-foundationHeight*0.4,0)
+		CourtText
+	}
+
+LshapedHouseWall-->
+	case HighLOD == false :
+		comp (f) 
+		{ side : 
+			WallBottomDirt
+			
+		| top : 
+			roofGable(RoofShedSlope*2) 
+			comp (f) 
+			{ top : ColoredRoof 				
+			| side : WallNoDirt				
+			}			
+		}			
+		
+	case  (Panels_Generate == "None" || Panels_Generate == "Roofs") && (HighLOD == true):
+		comp (f) 
+		{ top: 
+			roofGable(RoofShedSlope*2) 
+			Roof
+			
+		| front: 
+			WallWithOneDoor  
+			
+		| back : 
+			alignScopeToAxes(y)
+			split(x) 
+			{~1: 
+				WallNoDirt
+				t(0,-scope.sy/2,-0.001) 
+				WallNoDirt
+			| 0.8: 	split (y) 
+					{~1:WallNoDirt
+					|1.7 : SecondaryDoorText
+					|0.9 : WallNoDirt
+					}
+			|~1: 
+				WallNoDirt
+				t(0,-scope.sy/2,-0.001) 
+				WallNoDirt
+			}
+			
+		| left : 
+			WallBottomDirt
+			
+		| right : 
+			alignScopeToAxes(y)
+			WallNoDirt 
+			t(0,-scope.sy/2,-0.001) 
+			WallNoDirt
+		}
+		
+	else : 
+		comp (f) 
+		{ side:	Panels("Wall") 		
+		| top : Panels("Roof")
+		}
+
+		
+						
+LshapedHouseFacades_i(dx,y1,dy,dz,sx,sz)=
+	LshapedHouseFacades_i2((sin(y1)*dx+cos(y1)*dz)/sx, 2+ (dy+45)/90, -(cos(y1)*dx-sin(y1)*dz)/sz)
+	
+		
+LshapedHouseFacades_i2(xt,yt,zt)=
+	LshapedHouseFacades_i3(1*float((xt>0.1)&&(xt<=0.9)) + 2*float(xt>0.9), floor(yt)-floor(yt/4)*4, 1*float((zt>0.1)&&(zt<=0.9)) + 2*float(zt>0.9))
+		
+LshapedHouseFacades_i3(xt,yt,zt)=
+	3*float((yt==0)&&(zt==1)) +				// east side, court
+	4*float((yt==3)&&(xt==1)) +				// south side, court
+	5*float((yt==0)&&(zt==0)) +				// east side, street right
+	6*float((yt==1)&&(xt==0)) +				// north side, street
+	7*float((yt==2)) +						// west side, street
+	8*float((yt==3)&&(xt==2))				// south side, street
+	
+
+////////////////////////////////////////////////////////
+// House Type 5 // Building with peristylium
+////////////////////////////////////////////////////////
+OshapedHouse(foundationHeight) --> 
+	shapeO(scope.sz*0.3, scope.sx*0.3, scope.sz*0.3, scope.sx*0.3 ) 
+	{shape : 
+		alignScopeToAxes(y)	
+		comp(f) 
+		{top:
+			extrude(world.y, 100)
+			split(y) 
+			{foundationHeight*0.5 + groundfloorHeight + 0.4: 
+				OshapedHouseGroundFloor(foundationHeight*0.25 + groundfloorHeight + 0.2)
+			| 0.30 : 
+				comp (f) { side : WallNoDirt}
+			|firstfloorHeight: 
+				OshapedHouseFirstFloor 
+			| ~1 : 
+				NIL 
+			}
+		}
+		
+	|remainder : 
+		alignScopeToAxes(y)
+		OshapedHouseCourt(scope.sy)
+	}
+			
+
+OshapedHouseFirstFloor-->
+	case HighLOD == false :
+		comp (f) 
+		{ side : WallNoDirt
+			
+		| top : 
+			roofGable(rand(17,23)) 
+			comp (f) 
+			{ top : ColoredRoof 				
+			| side : WallNoDirt				
+			}			
+		}			
+		
+	case  (Panels_Generate == "None" || Panels_Generate == "Roofs") && (HighLOD == true):
+		alignScopeToAxes(y)
+		setPivot (xyz, setpivot_index1)	
+		OshapedHouseFirstFloorFacades(convert(x, pivot, world, pos, 0,0,0),convert(y, pivot, world, orient, 0,0,0)*cos(convert(x, pivot, world, orient, 0,0,0))+convert(x, pivot, world, orient, 0,0,0),convert(z, pivot, world, pos, 0,0,0),scope.sx,scope.sz)
+				
+	else : 
+		comp (f) 
+		{ side: 
+			alignScopeToAxes (y)
+			color (greywall) 
+			Panels("Wall") 
+			
+		| top : 
+			roofGable(rand(17,23)) 
+			comp (f) {side : color(roofbrickC) Panels("Roof")}
+		}
+		
+			
+OshapedHouseGroundFloor(porchHeight)-->
+	case HighLOD == false :
+		comp (f) { side : Wall}			
+		
+	case  (Panels_Generate == "None" || Panels_Generate == "Roofs") && (HighLOD == true):	
+		alignScopeToAxes(y)
+		setPivot (xyz, setpivot_index1)	
+		OshapedHouseGroundFloorFacades(porchHeight,convert(x, pivot, world, pos, 0,0,0),convert(y, pivot, world, orient, 0,0,0)*cos(convert(x, pivot, world, orient, 0,0,0))+convert(x, pivot, world, orient, 0,0,0),convert(z, pivot, world, pos, 0,0,0),scope.sx,scope.sz)
+								
+	else : 
+		comp (f) 
+		{ side: 
+			alignScopeToAxes (y)
+			color (greywall) 
+			Panels("Wall") 
+		}
+
+// For the various house types it is important to be able to identify the facades after the component split, since CityEngine has no inbuilt functions to do so.
+// For instance, the L-shaped houses have 6 facades and the U-shaped houses have 8 facades, each having a different texture and geometry. Specifically, with 
+// the inbuilt functions it is not possible to coherently distinguish between e.g. east oriented facades that face the courtyard or street.
+// To circumvent this problem the (L/U/O)shapedHouse(Ground/First)FloorFacades function receives as parameters:
+// x1 - x position in world coordinates of the Floor's geometry
+// y1 - y angle (degrees) in world coordinates of the Floor's geometry
+// z1 - z position in world coordinates of the Floor's geometry
+// sx - scope.sx of the Floor's geometry
+// sz - scope.sz of the Floor's geometry
+//
+// Subsequently the component split is performed and for each side (i.e. facade) the mathematical function (L/U/O)shapedHouse(Ground/First)FloorFacades_i is called with as 
+// parameters the facade's world coordinates and y-axis angle, which then determines the proper index of each facade. Finally, the facade index is given as a parameter 
+// to the function (L/U/O)shapedHouse(Ground/First)FloorFacades_intern, which creates the geometry specific for that facade.
+// Thanks to J.B. van Klinken for developing the indexation function.
+		
+OshapedHouseFirstFloorFacades(x1,y1,z1,sx,sz)-->	
+	comp(f)
+	{ side:
+		alignScopeToAxes (y) 	
+		OshapedHouseFirstFloorFacades_intern(OshapedHouseFacades_i(convert(x, pivot, world, pos, 0,0,0)-x1,90+y1,convert(y, pivot, world, orient, 0,0,0)*cos(convert(x, pivot, world, orient, 0,0,0))+convert(x, pivot, world, orient, 0,0,0)-y1,convert(z, pivot, world, pos, 0,0,0)-z1,sx,sz))
+	| top: 	
+		roofGable(rand(17,23)) 
+		Roof
+	}
+	
+	
+OshapedHouseGroundFloorFacades(porchHeight,x1,y1,z1,sx,sz)-->	
+	comp(f)
+	{ side : 
+		alignScopeToAxes (y)
+		OshapedHouseGroundFloorFacades_intern(porchHeight,OshapedHouseFacades_i(convert(x, pivot, world, pos, 0,0,0)-x1,90+y1,convert(y, pivot, world, orient, 0,0,0)*cos(convert(x, pivot, world, orient, 0,0,0))+convert(x, pivot, world, orient, 0,0,0)-y1,convert(z, pivot, world, pos, 0,0,0)-z1,sx,sz))
+	}
+
+
+	
+OshapedHouseGroundFloorFacades_intern(porchHeight,i) --> 
+	case scope.sz>0.01:
+		NIL
+		
+	case i==1 :
+		PorchGroundFloor1("Oshape1",mean(scope.sy,porchHeight)*(1-float(porch)) + porchHeight*(float(porch)),galleryDepth*1.5)
+						
+	case i==2 :
+		PorchGroundFloor1("Oshape2",mean(scope.sy,porchHeight)*(1-float(porch)) + porchHeight*(float(porch)),galleryDepth*1.5)
+						
+	case i==3 :
+		PorchGroundFloor1("Oshape1",mean(scope.sy,porchHeight)*(1-float(porch)) + porchHeight*(float(porch)),galleryDepth*1.5)
+						
+	case i==4 :
+		PorchGroundFloor1("Oshape2",mean(scope.sy,porchHeight)*(1-float(porch)) + porchHeight*(float(porch)),galleryDepth*1.5)
+						
+	case i==5 : 
+		WallWithOneDoor 
+		
+	case i==6 : 
+		WallBottomDirt 	
+		
+	case i==7 :		
+		WallBottomDirt 	
+		
+	case i==8 :
+		WallBottomDirt 	
+		
+	else : 
+		print("Error: 'Ofacades' function should return value in [3..8] range: " + i)
+		NIL
+			
+	
+OshapedHouseFirstFloorFacades_intern(i) --> 	
+	case i==1 : 
+		split(y)
+		{gazeboBeamWidth: WoodTexture
+		|~1:Gallery1("Oshape1",scope.sx,scope.sy,galleryDepth)
+		|gazeboBeamWidth: WoodTexture
+		}
+			
+	case i==2 : 
+		split(y)
+		{gazeboBeamWidth: WoodTexture
+		|~1:Gallery1("Oshape2",scope.sx,scope.sy,galleryDepth)
+		|gazeboBeamWidth: WoodTexture
+		}
+			
+	case i==3 : 
+		split(y)
+		{gazeboBeamWidth: WoodTexture
+		|~1:Gallery1("Oshape1",scope.sx,scope.sy,galleryDepth)
+		|gazeboBeamWidth: WoodTexture
+		}
+			
+	case i==4 : 
+		split(y)
+		{gazeboBeamWidth: WoodTexture
+		|~1:Gallery1("Oshape2",scope.sx,scope.sy,galleryDepth)
+		|gazeboBeamWidth: WoodTexture
+		}
+			
+	case i==5 : 
+		WallWithWindows	
+		
+	case i==6 : 
+		WallWithWindows	
+		
+	case i==7 : 
+		WallWithWindows	
+		
+	case i==8 :
+		WallWithWindows	
+		
+	else : 
+		print("Error: 'Ufacades' function should return value in [3..8] range: " + i)
+		NIL
+		
+					
+OshapedHouseFacades_i(dx,y1,dy,dz,sx,sz)=
+	OshapedHouseFacades_i2((sin(y1)*dx+cos(y1)*dz)/sx, 2+ (dy+45)/90, -(cos(y1)*dx-sin(y1)*dz)/sz)
+	
+		
+OshapedHouseFacades_i2(xt,yt,zt)=
+	OshapedHouseFacades_i3(1*float(xt>0.5), floor(yt)-floor(yt/4)*4, 1*float(zt>0.5))
+		
+OshapedHouseFacades_i3(xt,yt,zt)= // simulates case statement to identify the correct facade's index
+	1*float((yt==0)&&(zt==1)) +				// east side, court
+	2*float((yt==1)&&(xt==1)) +				// north side, court
+	3*float((yt==2)&&(zt==0)) +				// west side, court
+	4*float((yt==3)&&(xt==0)) +				// south side, court
+	5*float((yt==0)&&(zt==0)) +				// east side, street 
+	6*float((yt==1)&&(xt==0)) +				// north side, street
+	7*float((yt==2)&&(zt==1)) +				// west side, street
+	8*float((yt==3)&&(xt==1))				// south side, street				
+					
+					
+OshapedHouseCourt(foundationHeight) --> 	
+	extrude(world.up.flatTop,0)
+	t(0,-foundationHeight/2,0)
+	CourtText
+
+//////////////////////////////////////////////////////////////////////////////					
+DoorSteps(n)-->
+	t(0,0.2,0)
+	DoorSteps_intern(1,n)
+	
+DoorSteps_intern(k,n) -->
+	case k<=n :
+		t(0,-0.2,0)
+		s ('1, 0.2 , 0.2*k)
+		i("builtin.cube") 
+		comp (f) {side : StepsTex | top : StepsTex}
+		DoorSteps_intern(k+1,n)
+	else:
+		NIL	
+		
+		
+		
+// Set of functions that generate the ground and first floor geometry of all the house types except for the small houses, either with a porch (porch=true) or with a wall (porch=false).	
+// sx is the width of the ground floor facade
+// sy is the height of the ground floor facade
+// sz is the depth of the porch
+// To ensure the geometry under the porch is not affected by the intersection of the terrain, all facades (i.e. floor, ceiling, internal walls) are determined from the initial
+// facade by making use of the translation, scaling and rotation function.
+
+// PorchGroundFloor1 is a wrapper function that ensures that the initial facade is rectangular, even if the terrain intersects the bottom part.
+PorchGroundFloor1(houseType,sy,sz) -->
+	split(y) 
+	{~1:  NIL 
+	| 0.1 :
+		t(0,-sy+0.1,0)
+		s('1,sy,'1)	
+		PorchGroundFloor(houseType,scope.sx,scope.sy,sz)
+	}
+	
+	
+PorchGroundFloor(houseGalleryType,sx,sy,sz) -->
+	case ((houseGalleryType == "Lshape1")||(houseGalleryType == "Ushape2")||(houseGalleryType == "Oshape1")||(houseGalleryType == "Medium"))&&(porch==false) :
+		alignScopeToAxes(y)
+		Porch1TerraceWall(sx,sy,sz)
+		split (x) 
+		{ ~1 : 
+			WallWithWindowsDense(rand(2.0,3.5))
+			
+		| DoorOpeningRange : 	
+			split (y) 
+			{0.2:
+				DoorSteps(6)			
+																									
+			| 1.90: 
+				split (x) {0.2 : extrude (0.1) DoorPillarBack. | ~1 : DoorWoodTextXY | 0.2 : extrude (0.1) DoorPillarBack.} 
+				
+			| 0.4 : 
+				DoorTopFrame
+				
+			| ~1 : 
+				WallNoDirt
+			} 
+		| ~1 :
+			WallWithWindowsDense(rand(2.0,3.5))
+		}
+		
+	case ((houseGalleryType == "Lshape2")||(houseGalleryType == "Ushape1")||(houseGalleryType == "Ushape3")||(houseGalleryType == "Oshape2"))&&(porch==false) :
+		alignScopeToAxes(y)
+		Porch1TerraceWall(sx,sy,sz)
+		WallWithWindowsDense(rand(2.0,3.5))		
+			
+	case (houseGalleryType == "Medium")&&(porch==true) :
+		alignScopeToAxes(y)
+		set(trim.vertical,false) 
+		Gallery1LeftSide(sx,sy,sz)
+		Gallery1RightSide(sx,sy,sz)
+		Gallery1Ceiling(0,sx,sy,sz)
+		Porch1Back(0,sx,sy,sz)
+		Porch1Floor(0,sx,sy,sz)
+		Porch1Front(0,sx,sy,sz)
+		Porch1Terrace(sx,sy,sz)	
+			
+	case (houseGalleryType == "Lshape1")&&(porch==true) :
+		alignScopeToAxes(y)
+		set(trim.vertical,false) 
+		Gallery1LeftSide(sx,sy,sz)
+		Gallery1Ceiling(0,sx+sz,sy,sz)
+		Porch1Back(0,sx+sz,sy,sz)
+		Porch1Floor(0,sx+sz,sy,sz)
+		Porch1Front(0,sx+pillarBaseWidthPorch,sy,sz)
+		Porch1Terrace(sx,sy,sz)
+
+	case ((houseGalleryType == "Lshape2")||(houseGalleryType == "Ushape3"))&&(porch==true) :
+		alignScopeToAxes(y)
+		set(trim.vertical,false) 
+		Gallery1RightSide(sx,sy,sz)
+		Gallery1Ceiling(0,sx,sy,sz)
+		Porch1Back(-sz,sx+sz,sy,sz)
+		Porch1Floor(0,sx,sy,sz)
+		Porch1Front(-pillarBaseWidthPorch,sx+pillarBaseWidthPorch,sy,sz)
+		Porch1Terrace(sx,sy,sz)
+		
+	case (houseGalleryType == "Ushape1")&&(porch==true) :
+		alignScopeToAxes(y)
+		set(trim.vertical,false) 
+		Gallery1LeftSide(sx,sy,sz)
+		Gallery1Ceiling(0,sx,sy,sz)
+		Porch1Back(0,sx+sz,sy,sz)
+		Porch1Floor(0,sx,sy,sz)
+		Porch1Front(0,sx+pillarBaseWidthPorch,sy,sz)
+		Porch1Terrace(sx,sy,sz)
+				
+	case ((houseGalleryType == "Ushape2")||(houseGalleryType == "Oshape1"))&&(porch==true) :
+		alignScopeToAxes(y)
+		set(trim.vertical,false) 
+		Gallery1Ceiling(-sz,sx+2*sz,sy,sz)
+		Porch1Back(-sz,sx+2*sz,sy,sz)
+		Porch1Floor(-sz,sx+2*sz,sy,sz)
+		Porch1Front(-pillarBaseWidthPorch,sx+2*pillarBaseWidthPorch,sy,sz)
+		Porch1Terrace(sx,sy,sz)
+		
+	case (houseGalleryType == "Oshape2")&&(porch==true) :
+		alignScopeToAxes(y)
+		set(trim.vertical,false) 
+		Gallery1Ceiling(0,sx,sy,sz)
+		Porch1Back(-sz,sx+2*sz,sy,sz)
+		Porch1Floor(0,sx,sy,sz)
+		Porch1Front(-pillarBaseWidthPorch,sx+2*pillarBaseWidthPorch,sy,sz)
+		Porch1Terrace(sx,sy,sz)
+				
+	else :
+		print("Error: unknown houseGalleryType " + houseGalleryType)
+
+
+
+Gallery1(houseGalleryType,sx,sy,sz) -->
+	case houseGalleryType == "Medium" :
+		alignScopeToAxes(y)
+		set(trim.vertical,false) 
+		Gallery1Floor(0,sx,sy,sz)
+		Gallery1Ceiling(0,sx,sy,sz)
+		Gallery1Front(0,sx,sy,sz)
+		Gallery1Back(0,sx,sy,sz)
+		Gallery1LeftSide(sx,sy,sz)
+		Gallery1RightSide(sx,sy,sz)
+		
+	case houseGalleryType == "Lshape1" :
+		alignScopeToAxes(y)
+		set(trim.vertical,false) 
+		Gallery1Floor(0,sx+sz,sy,sz)
+		Gallery1Ceiling(0,sx+sz,sy,sz)
+		Gallery1Front(0,sx+pillarBaseWidth,sy,sz)
+		Gallery1Back(0,sx+sz,sy,sz)
+		Gallery1LeftSide(sx,sy,sz)
+		
+	case (houseGalleryType == "Lshape2")||(houseGalleryType == "Ushape3") :
+		alignScopeToAxes(y)
+		set(trim.vertical,false) 
+		Gallery1Floor(0,sx,sy,sz)
+		Gallery1Ceiling(0,sx,sy,sz)
+		Gallery1Front(-pillarBaseWidth,sx+pillarBaseWidth,sy,sz)
+		Gallery1Back(-sz,sx+sz,sy,sz)
+		Gallery1RightSide(sx,sy,sz)
+		
+	case houseGalleryType == "Ushape1" :
+		alignScopeToAxes(y)
+		set(trim.vertical,false) 
+		Gallery1Floor(0,sx,sy,sz)
+		Gallery1Ceiling(0,sx,sy,sz)
+		Gallery1Front(0,sx+pillarBaseWidth,sy,sz)
+		Gallery1Back(0,sx+sz,sy,sz)
+		Gallery1LeftSide(sx,sy,sz)
+				
+	case (houseGalleryType == "Ushape2")||(houseGalleryType == "Oshape1") :
+		alignScopeToAxes(y)
+		set(trim.vertical,false) 
+		Gallery1Floor(-sz,sx+2*sz,sy,sz)
+		Gallery1Ceiling(-sz,sx+2*sz,sy,sz)
+		Gallery1Front(-pillarBaseWidth,sx+2*pillarBaseWidth,sy,sz)
+		Gallery1Back(-sz,sx+2*sz,sy,sz)
+				
+	case houseGalleryType == "Oshape2" :
+		alignScopeToAxes(y)
+		set(trim.vertical,false) 
+		Gallery1Floor(0,sx,sy,sz)
+		Gallery1Ceiling(0,sx,sy,sz)
+		Gallery1Front(-pillarBaseWidth,sx+2*pillarBaseWidth,sy,sz)
+		Gallery1Back(-sz,sx+2*sz,sy,sz)
+				
+	else :
+		print("Error: unknown houseGalleryType " + houseGalleryType)
+
+		
+Porch1Front(tx,sx,sy,sz)-->
+	s (sx,'1,pillarBaseWidthPorch)
+	t (tx,0, -pillarBaseWidthPorch)
+	i("builtin:cube")
+	split(x)
+	{ pillarBaseWidthPorch  :Porch1Pillar
+	| ~gallerySpacing    : NIL
+	| { pillarBaseWidthPorch: Porch1Pillar | ~gallerySpacing : NIL }*
+	| pillarBaseWidthPorch :  Porch1Pillar 
+	}
+	
+		
+Gallery1Front(tx,sx,sy,sz)-->
+	s (sx,'1,pillarBaseWidth)
+	t (tx,0, -pillarBaseWidth)
+	i("builtin:cube")
+	split(x)
+	{ pillarBaseWidth  :Gallery1Pillar
+	| ~gallerySpacing    : Gallery1OpeningSection
+	| { pillarBaseWidth: Gallery1Pillar | ~gallerySpacing : Gallery1OpeningSection }*
+	| pillarBaseWidth :  Gallery1Pillar 
+	}
+	
+	
+Gallery1OpeningSection -->
+	s('1,'1,0.05) 
+	center(z) 	
+	split(y)
+	{ 0.05 : 
+		center(z) 
+		WoodTexture
+		
+	| ~0.9 : 
+		split(x)
+		{ ~0.3: NIL 
+		| {0.05:  WoodTexture | ~0.3: NIL}* 
+		}
+	
+	| 0.05 : 
+		center(z) 
+		WoodTexture
+				
+	| ~1 : 
+		NIL 
+	
+	}
+	
+	
+Porch1Pillar-->
+	split(y)
+	{0.2:comp(f) {top: WoodenPillarText| side: WoodenPillarText}
+	|~1:s(pillarBaseWidth,'1,pillarBaseWidth)
+		center(xz)
+		comp(f) {side: WoodenPillarText}
+	|0.2:comp(f) {bottom: WoodenPillarText| side: WoodenPillarText}
+	}
+				
+Gallery1Pillar-->
+	comp(f) {side: WoodenPillarText}
+
+	
+Porch1Floor(tx,sx,sy,sz)-->
+	r(-90,0,0)
+	s(sx,sz,'1)
+	t(tx,0,0)
+	CourtTextXY	
+	
+	
+Porch1Terrace(sx,sy,sz)-->
+	s('1,sy/2,'1)
+	t(0,-sy/2,0)
+	CourtTextXY	
+	
+	
+Porch1TerraceWall(sx,sy,sz)-->
+	s('1,sy/2,'1)
+	t(0,-sy/2,0)
+	WallNoDirt	
+	
+	
+Gallery1Floor(tx,sx,sy,sz)-->
+	r(-90,0,0)
+	s(sx,sz,'1)
+	t(tx,0,0)
+	setupProjection (0, scope.yx, 1, 5)
+	texture (door_texture)	
+	projectUV (0)	
+	
+	
+Gallery1Ceiling(tx,sx,sy,sz)-->
+	r(90,0,0)
+	t(tx,-sz,-sy)
+	s(sx,sz,'1)
+	WoodTexture
+	
+WoodTexture-->
+	setupProjection(0, scope.yx, 0.3,~3,0.5)
+	texture (woodTex)	
+	projectUV (0) 
+	
+	
+Gallery1Back(tx,sx,sy,sz)-->
+	t(tx,0,-sz)
+	s(sx,'1,'1)
+	split(x) 
+	{~2.5: WallNoDirt
+	| 0.8: 	split (y) 
+			{1.7 : SecondaryDoorText
+			|~1 : WallNoDirt
+			}
+	|{~2.5: WallNoDirt 
+	|0.8: 	split (y) 
+			{1.7: SecondaryDoorText
+			|~1: WallNoDirt
+	}}*
+	|~2.5: WallNoDirt
+	}
+	
+	
+Porch1Back(tx,sx,sy,sz)-->
+	t(tx,0,-sz)
+	s(sx,'1,'1)
+	split(x) 
+	{~2: WallNoDirt
+	| 0.8: 	split (y) 
+			{1.7 : SecondaryDoorText
+			|~1 : WallNoDirt
+			}
+	|{~2: WallNoDirt 
+	|0.8: 	split (y) 
+			{1.7: SecondaryDoorText
+			|~1: WallNoDirt
+	}}*
+	|~2: WallNoDirt
+	}
+		
+	
+Gallery1LeftSide(sx,sy,sz)-->
+	r(0,90,0)
+	s(sz,'1,'1)
+	WallNoDirt
+
+	
+Gallery1RightSide(sx,sy,sz)-->
+	r(0,-90,0)
+	t(-sz,0,-sx)
+	s(sz,'1,'1)
+	WallNoDirt	
+
+SecondaryDoorText--> rotateScope (0, 0, 90)DoorText
+								
+
+Pillar--> comp (f) {side : WoodenPillarText | top : WoodenPillarText | bottom : WoodenPillarText}
+						
+						
+DoorOpening--> # Pivot is set in previous declaration
+				split (z) {0.2 : extrude (0.1) DoorPillarBack. | ~1 : DoorWoodText | 0.2 : extrude (0.1) DoorPillarBack.} 
+																
+DoorTopFrame--> alignScopeToGeometry (zUp, 1)
+				setPivot (xyz, setpivot_index2)
+				comp (f) {back : InsertCornice}
+InsertCornice--> s ('1.2, scope.sy, '0.5)
+				center (x)
+				i ("assets/facades/door-cornice.01.simple.obj")
+													
+
+//////////////////////////////
+// AGORA Area
+//////////////////////////////
+attr StoaPillarsWidth = 0.8
+attr StoaOpening = 2
+attr StoaDepth = 5
+const columnBase =  "assets/facades/base.01.attic.obj" # from CityEngine training material: rule file Parthenon
+const columnShaft = "assets/facades/shaft.01.obj" # from CityEngine training material: rule file Parthenon
+const columnCapital = "assets/facades/base.01.attic.obj" # from CityEngine training material: rule file Parthenon
+
+Agora--> report ("Area.Agora",geometry.area)
+			AreaAgora
+AreaAgora --> split (z) {~1 : OpenSpace  
+						| 12.30 : StoaEast}
+	
+StoaEast --> 
+	extrude(world.up.flatTop, 7+groundfloorHeight+firstfloorHeight)  
+	CompStoaEastVolume
+
+
+			CompStoaEastVolume--> case Panels_Generate == "None" || Panels_Generate == "Roofs": 
+									comp (f) {0 : NIL 
+										| front : Wall
+										| back : EntranceStoaEastPillars 
+										| left : Wall
+										| right : Wall
+										| top : roofGable (20)RoofStoa}
+									else: comp (f) {left: alignScopeToAxes ()
+															Panels("Walls") 
+													| back : alignScopeToAxes ()Panels("Walls") 
+													| front : EntranceStoaEastPillars
+													|right : alignScopeToAxes (y)
+															Panels("Walls") 
+													| top : roofGable (20) 
+															comp (f) {side : Panels("Roof")}
+													}
+									
+
+RoofStoa --> comp (f) {top : Texture_roof1 | side : WallNoDirt}
+
+
+EntranceStoaEastPillars--> alignScopeToAxes (y)
+						split (y) {1.5 : StepsStoaEast 
+									| 0.2 : s('1, '1, StoaDepth) 
+										i("builtin:cube") 
+										t(0,0, '-1) 
+										StoaFloor 
+									| ~1 : UpperEastStoa 
+									| 0.3 : UpperFrame.
+									| 0.5: UnderRoof.}
+
+
+UpperEastStoa-->  StoaFrontEast
+	 				t(0,0, -StoaDepth) set(trim.vertical,false) 
+					Wall #StoaBack doors need to be added
+
+StepsStoaEast--> alignScopeToAxes(y)
+			i("builtin.cube") 
+			s (scope.sx, scope.sy, 0.4)
+			center(x) 
+			StepsStartEast
+								
+				StepsStartEast--> center (x) 
+							split(y) { ~1 : s('1,'1,scope.sz+0.4)center(x)StepsStartEast|
+										0.30 : FollowingStep }
+
+FollowingStep--> comp (f){all: StepsTex}
+			
+
+StoaFrontEast--> split (x) { StoaPillarsWidth  :WallXZ.  
+			| ~StoaOpening    : t(0,0, -0.5)NIL 
+			| { StoaPillarsWidth: t(0,0, -0.5)StoaColumn | ~StoaOpening : t(0,0, -0.5)NIL }*
+			| StoaPillarsWidth  : WallXZ. }
+
+StoaColumn--> split (y) {0.5 : ColumnBase | ~1 : ColumnShaft | 0.5 : ColumnNeck}
+				ColumnBase --> i (columnBase)
+								#r (0, 0, 0)
+								s (0.8,  scope.sy, 0.8)
+								t (0, 0, -0.5)
+								center (xz)
+								column.
+				ColumnShaft--> i (columnShaft)
+								#r (0, 0, 0)
+								s (0.6,  scope.sy+0.5, 0.6)
+								t (0, 0, -0.5)
+								center (xz)
+								column.
+				ColumnNeck--> i (columnCapital)
+								r (180, 0, 0)
+								s (0.8,  scope.sy, 0.8)
+								t (0, -0.5, 0)
+								center (xz)
+								column.
+
+OpenSpace--> TextureAgora
+			DefineAltarsTrees 
+
+			
+DefineAltarsTrees--> split (z) {~1 : AltarsTrees  
+							| 1 : NIL}
+						
+	
+AltarsTrees --> split (x) {~0.5 : AltarType1 
+								| ~0.5 : AltarType2}
+									TreesArea
+
+TreesArea-->	split (x) {scope.sx-60: TreesAgora | ~1 : TextureAgora | scope.sx-30: TreesAgora | ~1 : TextureAgora | scope.sx-10: TreesAgora} # per il momento importo nell'are centrale dell'agora la texture della strada dalla regola delle strade
+
+
+TreesAgora --> alignScopeToGeometry (yUp, 1)center (xz)scatter( surface, 15, gaussian) { Tree } 
+
+AltarType1 --> scatter(surface, 1, uniform) { Altar1}
+AltarType2 --> scatter(surface, 1, uniform) { Altar2}
+
+attr degree = -360
+Altar1--> 
+		s (3, 2.40, 3.30) # cf. altar GD23E Delos, in Etienne, AA, 2007: 3,08 x 3.30 x h 7ft e 1/4 (1ft = 0,33cm) 
+		t (0, -0.5, 0)
+		r ( -10, degree, 0)
+		i ("altars/Altare_DelosGD23E.dae")
+		
+Altar2--> 
+		s (3, 2.5, 3) 
+		t (3, -0.5, 0)
+		r ( -10, degree, 0)
+		i ("altars/Altare_DelosGD23E.dae") # future work: insert 3D model of a different altar
+
+
+//////////////////////
+// ROOF'S OPTIONS
+//////////////////////
+Roof --> case HighLOD == true :
+		RoofHighLOD
+		
+		else : comp (f) {top : color(roofbrickC) ColoredRoof
+					| side : color (greywall) ColoredVolume.}
+
+ColoredRoof --> Texture_roof1
+
+RoofHighLOD --> case  Panels_Generate == "None" || Panels_Generate == "Roofs": 
+			comp (f) {top : extrude (y, 0.1) RoofExtruded  
+					| side : WallNoDirt} 
+			else : comp (f) {side : alignScopeToAxes (y)
+									color (greywall) Panels("Wall") 
+							| top : roofGable(RoofShedSlope*2) 
+									comp (f) {side : color(roofbrickC)
+									Panels("Roof")}}
+			
+RoofExtruded--> comp (f) {object.top: RandomTexture_roof | vertical : color(roofbrickC)roofFrameText.}
+								
+RandomTexture_roof--> 20% : Texture_roof1
+						20% : Texture_roof2
+						20% : Texture_roof3
+						20% : Texture_roof4
+						else : Texture_roof5
+
+///////////////////
+// TEXTURES
+///////////////////
+Texture_roof1 --> setupProjection (0, scope.xy, 5, 5)
+		texture (roof_tex1)	
+		projectUV (0)
+		
+		setupProjection (2, scope.xy, '1, '1) 
+		set (material.dirtmap, general_dirt)
+		set(material.bumpmap, roof_bump)
+		set (material.bumpValue, RoofBumpValue ) 
+		set (material.normalmap, roof_normal)
+		projectUV(2)				
+
+Texture_roof2 --> setupProjection (0, scope.xy, 5, 5)
+		texture (roof_tex2)	
+		projectUV (0)
+		
+		setupProjection (2, scope.xy, '1, '1) 
+		set (material.dirtmap, general_dirt)
+		set(material.bumpmap, roof_bump)
+		set (material.bumpValue, RoofBumpValue ) 
+		set (material.normalmap, roof_normal)
+		projectUV(2)				
+
+Texture_roof3 --> setupProjection (0, scope.xy, 5, 5)
+		texture (roof_tex3)	
+		projectUV (0)
+		
+		setupProjection (2, scope.xy, '1, '1) 
+		set (material.dirtmap, general_dirt)
+		set(material.bumpmap, roof_bump)
+		set (material.bumpValue, RoofBumpValue ) 
+		set (material.normalmap, roof_normal)
+		projectUV(2)
+
+Texture_roof4 --> setupProjection (0, scope.xy, 5, 5)
+		texture (roof_tex4)	
+		projectUV (0)
+		
+		setupProjection (2, scope.xy, '1, '1) 
+		set (material.dirtmap, general_dirt)
+		set(material.bumpmap, roof_bump)
+		set (material.bumpValue, RoofBumpValue ) 
+		set (material.normalmap, roof_normal)
+		projectUV(2)
+
+Texture_roof5 --> setupProjection (0, scope.xy, 5, 5)
+		texture (roof_tex5)	
+		projectUV (0)
+		
+		setupProjection (2, scope.xy, '1, '1) 
+		set (material.dirtmap, general_dirt)
+		set(material.bumpmap, roof_bump)
+		set (material.bumpValue, RoofBumpValue ) 
+		set (material.normalmap, roof_normal)
+		projectUV(2)						
+
+CourtText -->	
+		setupProjection (0, scope.xz, 5, 5)
+		texture (court_tex)	
+		projectUV (0)
+		
+		setupProjection (2, scope.xz, '1, '1) 
+		set (material.dirtmap, general_dirt)
+		projectUV(2)	
+		
+	
+CourtTextXY -->	
+		setupProjection (0, scope.xy, 5, 5)
+		texture (court_tex)	
+		projectUV (0)
+		
+		setupProjection (2, scope.xy, '1, '1) 
+		set (material.dirtmap, general_dirt)
+		projectUV(2)	
+
+DoorText--> case HighLOD == true || Panels_Generate == "None" || Panels_Generate == "Roofs":	
+			setupProjection (0, scope.yx, '1, '1)
+			texture (door_texture)	
+			projectUV (0)
+			else : color (greywall) ColoredVolume.	
+
+DoorWoodTextXY--> case HighLOD == true || Panels_Generate == "None" || Panels_Generate == "Roofs":	
+				setupProjection (0, scope.xy, '1, '1)
+				texture (door_texture)	
+				projectUV (0)
+				
+				setupProjection (2, scope.zx, '1, '1)
+				set(material.bumpmap, door_normal_map)
+				set (material.bumpValue, DoorBumpValue )
+				projectUV (2)
+				
+				else : color (greywall) ColoredVolume.	
+				
+DoorWoodText--> case HighLOD == true || Panels_Generate == "None" || Panels_Generate == "Roofs":	
+				setupProjection (0, scope.zx, '1, '1)
+				texture (door_texture)	
+				projectUV (0)
+				
+				setupProjection (2, scope.zx, '1, '1)
+				set(material.bumpmap, door_normal_map)
+				set (material.bumpValue, DoorBumpValue )
+				projectUV (2)
+								
+				else : color (greywall) ColoredVolume.	
+
+WoodenPillarText --> case HighLOD == true || Panels_Generate == "None" || Panels_Generate == "Roofs":	
+			setupProjection (0, scope.xy, 1,~10,1)
+			texture (woodTex)	
+			projectUV (0)
+			else : color (greywall) ColoredVolume.	
+
+Wall--> 
+	setupProjection (0, scope.xy, '1, '2)
+	texture (Wall_noDirt_tex)	
+	projectUV (0)
+			
+	setupProjection (1, scope.xy, '1, '1) 
+	set(material.bumpmap, Wall_bump)
+	set (material.bumpValue, WallBumpValue ) 
+	projectUV(1)
+	
+	setupProjection (2, scope.xy, '1, '1) 
+	set (material.dirtmap, general_dirt)
+	projectUV(2)
+	
+		
+WallBottomDirt --> 
+	alignScopeToGeometry(zUp,0)
+	setupProjection (0, scope.xy, 15, 8, rand(2), 0)
+	texture (Wall_BottomDirt_tex)	
+		
+	setupProjection (1, scope.xy, 15, 8, rand(2), 0)
+	set(material.bumpmap, Wall_bump)
+	set (material.bumpValue, WallBumpValue ) 
+	projectUV (0)projectUV (1)	
+				
+				
+WallNoDirt --> 
+	setupProjection (0, scope.xy, 15, 8, rand(2), rand(2))
+	texture (Wall_noDirt_tex)	
+	set(material.bumpmap, Wall_bump)
+	set (material.bumpValue, WallBumpValue ) 
+	projectUV (0)
+
+StoaFloor --> setupProjection (0, scope.xz, 7, 5)
+	texture (Wall_noDirt_tex)	
+	projectUV (0)
+			
+	setupProjection (2, scope.xz, '1, '1) 
+	set(material.bumpmap, Wall_bump)
+	set (material.bumpValue, WallBumpValue ) 
+	projectUV(2)
+
+WallXZnoDirt-->case HighLOD == true:
+		setupProjection (0, scope.xz, '1, '2)
+		texture (Wall_noDirt_tex)	
+		set(material.bumpmap, Wall_bump)
+		set (material.bumpValue, WallBumpValue ) 
+		projectUV (0)	
+		
+		else : setupProjection (0, scope.xz, '1, '2)
+		texture (Wall_noDirt_tex)	
+		set(material.bumpmap, Wall_bump)
+		set (material.bumpValue, WallBumpValue ) 
+		projectUV (0)	
+
+StepsTex --> case HighLOD == true :
+					setupProjection (0, scope.yx, 0.4, 1)
+					texture (stepsText)
+					projectUV (0)
+									
+					setupProjection (2, scope.yx, '1, '1)
+					set(material.dirtmap, dirt_tex1)
+					projectUV (2)
+					
+					else : setupProjection (0, scope.yx, '0.5, '1)
+					texture (stepsText)
+					projectUV (0)
+					color (white) ColoredVolume. 
+							
+TextureAgora --> case HighLOD == true :
+			setupProjection (0, scope.xz, 40,  40) //ratio image: 1:1
+					texture (agoraText)
+					projectUV (0)
+									
+					setupProjection (1, scope.xz, 5, 15)
+					set(material.bumpmap, streetBump)
+					projectUV (1)
+					
+			else :	setupProjection (0, scope.xz, 40,  40) //ratio image: 1:1
+					texture (agoraText)
+					projectUV (0)
+									
+					setupProjection (1, scope.xz, 5, 15)
+					set(material.bumpmap, streetBump)
+					projectUV (1)
+			
+TextureFoundation --> case HighLOD == true :
+			setupProjection (0, scope.xz, 20,  10) //ratio image: 1:1
+					texture (agoraText)
+					projectUV (0)
+									
+					setupProjection (1, scope.xz, 5, 15)
+					set(material.bumpmap, streetBump)
+					projectUV (1)
+					
+			else :	setupProjection (0, scope.xz, 20,  10) //ratio image: 1:1
+					texture (agoraText)
+					projectUV (0)
+									
+					setupProjection (1, scope.xz, 5, 15)
+					set(material.bumpmap, streetBump)
+					projectUV (1)
+			
+				
+// PARAMETERS TO SAMPLE POINTS AND PANELS ON BUILDINGS'SURFACES (source: http://www.arcgis.com/home/item.html?id=b7142081948b4cd9ac1c852d8790c9c9)
+@Group("PANELS")
+@Group("Panels",6) @Order(1) @Range("None","On Sides", "Roofs", "All") @Description("Turn on to split the whole model into rectangular panels (usable e.g. for analysis)")
+attr Panels_Generate = "None"
+
+@Group("Panels") @Order(2) @Range(1,20) @Description("Note that panel size is adjusted/rounded to the geometry's dimensions on the side")
+attr Panel_Size = 2
+
+@Group("Panels") @Order(3) @Range(0,3) @Description("Distance of the sampling point in front of the panel's center.")
+attr Panel_Sampling_Point_Distance = 0.1		
+
+compMultipatch-->
+ case Panels_Generate == "None" || Panels_Generate == "Roofs":
+			 						color (red) Multipatch	
+	else:  comp (f) {all : alignScopeToAxes (y)
+							Panels("Wall") }
+														
+# for panels
+getWorldDir = 
+	case geometry.isOriented(world.north)	: "north"
+	case geometry.isOriented(world.south)	: "south"
+	case geometry.isOriented(world.west)	: "west"
+	case geometry.isOriented(world.east)	: "east"
+	case geometry.isOriented(world.up)		: "up"
+	else									: "down"
+getLocalDir = 
+	case geometry.isOriented(object.front)	: "front"
+	case geometry.isOriented(object.back)	: "rear"
+	case geometry.isOriented(object.left)	: "left"
+	case geometry.isOriented(object.right)	: "right"
+	case geometry.isOriented(object.top)	: "top"
+	else: "bottom"	
+Panels(type) --> split(x,noAdjust){ ~Panel_Size: split(y){ ~Panel_Size: Panel(type) }* }*			
+
+Panel(type) -->
+	case geometry.area() < 0.02:
+		NIL
+		
+	
+	else:
+		alignScopeToGeometry(zUp,0,world.lowest)
+		texture("")
+		report("ID",uid) 																		# switching off texture
+		report("Type",type) report("Area",geometry.area)
+		report("Local Orientation",getLocalDir) report("World Orientation",getWorldDir) 
+		Panel.
+		[ s(0,0,0) center(xyz) t(0,0, Panel_Sampling_Point_Distance) # original: rand(Panel_Sampling_Point_Distance, Panel_Sampling_Point_Distance+1)
+		  comp(v){ 0: report("Z",scope.elevation) SamplingPoint. } ]	
+		
+
