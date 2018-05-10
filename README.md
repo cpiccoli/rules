@@ -8,6 +8,7 @@ The rule file "Scale-StoneTypeShp.cga" for GIS-driven symbology (see Piccoli 201
 ### Rule for (late) Classical Greek architecture and street network:
 The rule file "Individual_houses_slope.cga" for the generation of (late) Classical Greek domestic architecture and the rule "streets-steps.cga" are associated with the zipped folder assets_2. Examples of houses procedurally modelled using this rule include: 
 ![piccoli2018_fig6_14](https://user-images.githubusercontent.com/37038347/39874396-e8beb790-546d-11e8-9aa5-e614f79f8e1e.jpg)
-(see also a model of a house on <a href="https://sketchfab.com/models/796866cb0bd541c083ff82c61b0cff56">SketchFab</a>.
+(see also a model of a house on <a href="https://sketchfab.com/models/796866cb0bd541c083ff82c61b0cff56">SketchFab</a>).
 
-Important! After downloading the folders, change their names to 'assets' and 'models' in order to guarantee the proper relation with the rule file.
+### Important! 
+After downloading the folders, change their names to 'assets' and 'models' in order to guarantee the proper relation with the rule file.
